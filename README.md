@@ -104,7 +104,13 @@ npm run cdiag -- render examples/simple_riscv_datapath.cdl -o build/simple_riscv
 
 ## Use from an application
 
-The renderer accepts CDL source text and resolves to an SVG string. Node applications can use the bundled Netlist2SVG renderer:
+The package name in the import examples is its module name; it does not mean the package is available from the npm registry. Install it from the GitHub repository first. Since the repository is private, your GitHub account must have access and SSH authentication must be configured:
+
+```sh
+npm install git+ssh://git@github.com/wakuto/digital_block_dsl.git#main
+```
+
+Git-based installation runs the package's `prepack` script to build the ignored `dist/` files. The renderer accepts CDL source text and resolves to an SVG string. Node applications can use the bundled Netlist2SVG renderer:
 
 ```ts
 import { renderSvg } from "@wakuto/digital-block-dsl/node";

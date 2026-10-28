@@ -19,6 +19,7 @@
   "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "cdiag": "node dist/cli.js"
   },
   "dependencies": {
