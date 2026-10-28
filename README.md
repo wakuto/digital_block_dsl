@@ -212,9 +212,26 @@ diagram "Execution Datapath" {
 | `style logic`, `storage`, `control`, `neutral`, `accent` | Block fill color role |
 | `label "Text"` | Display label override inside a typed block (not shown for `MUX`) |
 
-Built-ins are `ADD`, `SUB`, `SHIFT`, `SHL`, `SHR`, `SAR`, `AND`, `OR`, `XOR`, `NOT`, `MUX`, `DFF`, `CMP`, `ALU`, and `SRAM`. `AND`, `OR`, and `NOT` render as MIL logic-gate symbols. `ADD` and `SUB` use `+` and `−`; `CMP` displays `=` by default and `≠` when declared as `CMP(width=32, op="ne")`. Use `box` for other components. Parameters include `width`, `addr_width`, `op_width`, and `shamt_width` where applicable. Shift amount width defaults to `ceil(log2(width))`, with a minimum of one bit.
+### Built-in primitive reference
 
-Port names remain part of the CDL connections. For a cleaner diagram, the renderer hides port labels on logic gates and multiplexers; the MUX select and output names are hidden as well.
+In the port column, names before `→` are inputs and names after it are outputs. `n` is `width`; `m` is `shamt_width`. Width defaults to 32 bits, `addr_width` to 12 bits, and `op_width` to 4 bits. Shift amount width defaults to `ceil(log2(width))`, with a minimum of one bit.
+
+| Primitive | Ports | Parameters | Rendered appearance |
+|---|---|---|---|
+| `ADD` | `A[n], B[n] → Y[n]` | `width` | `+` |
+| `SUB` | `A[n], B[n] → Y[n]` | `width` | `−` |
+| `AND` | `A[n], B[n] → Y[n]` | `width` | MIL AND gate |
+| `OR` | `A[n], B[n] → Y[n]` | `width` | MIL OR gate |
+| `XOR` | `A[n], B[n] → Y[n]` | `width` | Compact `XOR` block |
+| `NOT` | `A[n] → Y[n]` | `width` | MIL inverter with bubble |
+| `SHIFT`, `SHL`, `SHR`, `SAR` | `A[n], B[m] → Y[n]` | `width`, `shamt_width` | Compact operator block |
+| `CMP` | `A[n], B[n] → Y[1]` | `width`, `op` (`eq` default; `ne`) | `=` or `≠` |
+| `MUX` | `A[n], B[n], S[1] → Y[n]` | `width` | Narrow, unlabeled tapered symbol |
+| `ALU` | `A[n], B[n], OP[op_width] → Y[n]` | `width`, `op_width` | ALU shape with left notch |
+| `DFF` | `D[n], CLK[1] → Q[n]` | `width` | Storage block with clock marker |
+| `SRAM` | `ADDR[addr_width], WDATA[n], WE[1], CLK[1] → RDATA[n]` | `width`, `addr_width` | Storage rectangle |
+
+Use `box` for other components. Port names remain available for CDL connections, but the renderer hides port labels on `AND`, `OR`, `NOT`, and `MUX` symbols.
 
 ### Connections, slices and concatenation
 
