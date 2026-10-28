@@ -1,0 +1,11 @@
+services:
+  typescript:
+    build: .
+    working_dir: /app
+    volumes:
+      - .:/app
+      - cdiag_node_modules_v2:/app/node_modules
+    command: npm run build
+
+volumes:
+  cdiag_node_modules_v2:

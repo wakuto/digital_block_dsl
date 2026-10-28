@@ -1,0 +1,10 @@
+.git
+.pytest_cache
+__pycache__
+node_modules
+dist
+build
+tests
+examples
+cdiag
+scripts

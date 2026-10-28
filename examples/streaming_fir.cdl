@@ -1,0 +1,34 @@
+version 1
+
+diagram "Three-Tap Streaming FIR" {
+    direction LR
+    layout balanced
+
+    input sample[16], coefficient[16], valid, clk
+    output filtered[32], filtered_valid
+
+    delay0: DFF(width=16)
+    delay1: DFF(width=16)
+    multiply0: box "Signed Multiplier" { in A[16], B[16] out PRODUCT[32] }
+    multiply1: box "Signed Multiplier" { in A[16], B[16] out PRODUCT[32] }
+    multiply2: box "Signed Multiplier" { in A[16], B[16] out PRODUCT[32] }
+    sum0: ADD(width=32)
+    sum1: ADD(width=32)
+    valid0: DFF(width=1)
+    valid1: DFF(width=1)
+
+    sample -> delay0.D, multiply0.A
+    delay0.Q -> delay1.D, multiply1.A
+    delay1.Q -> multiply2.A
+    coefficient -> multiply0.B, multiply1.B, multiply2.B
+    multiply0.PRODUCT -> sum0.A
+    multiply1.PRODUCT -> sum0.B
+    sum0.Y -> sum1.A
+    multiply2.PRODUCT -> sum1.B
+    sum1.Y -> filtered
+
+    valid -> valid0.D
+    valid0.Q -> valid1.D
+    valid1.Q -> filtered_valid
+    clk -> delay0.CLK, delay1.CLK, valid0.CLK, valid1.CLK
+}

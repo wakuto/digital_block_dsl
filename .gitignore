@@ -1,7 +1,4 @@
-__pycache__/
-.pytest_cache/
-*.pyc
-*.egg-info/
-
 build/*
 !build/.gitkeep
+dist/
+node_modules/

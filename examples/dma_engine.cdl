@@ -1,0 +1,64 @@
+version 1
+
+diagram "DMA Transfer Engine" {
+    direction LR
+    layout feedback
+
+    input start, clk, reset
+    input source_base[32], destination_base[32], length[16]
+    input memory_read_data[32], memory_ready
+    output memory_address[32], memory_write_data[32], memory_write
+    output done
+
+    control: box "Transfer Controller" {
+        in START, RESET, READY, COUNT_DONE, CLK
+        out READ_REQ, WRITE_REQ, COUNT_EN, DONE
+    }
+    source_pointer: DFF(width=32)
+    destination_pointer: DFF(width=32)
+    source_pointer_next: MUX(width=32)
+    destination_pointer_next: MUX(width=32)
+    remaining: box "Remaining-Bytes Counter" {
+        in LOAD[16], EN, CLK
+        out ZERO, VALUE[16]
+    }
+    source_increment: ADD(width=32)
+    destination_increment: ADD(width=32)
+    read_address: MUX(width=32)
+    write_data: DFF(width=32)
+    request_gate: box "Memory Request Interface" {
+        in READ, WRITE, READY, ADDR_IN[32], DATA_IN[32]
+        out ADDR_OUT[32], DATA_OUT[32], WE, ACCEPTED
+    }
+
+    start -> control.START
+    reset -> control.RESET
+    clk -> control.CLK, source_pointer.CLK, destination_pointer.CLK
+    clk -> remaining.CLK, write_data.CLK
+    memory_ready -> control.READY, request_gate.READY
+    length -> remaining.LOAD
+    control.COUNT_EN -> remaining.EN
+    remaining.ZERO -> control.COUNT_DONE
+    control.DONE -> done
+
+    source_base -> source_pointer_next.A
+    destination_base -> destination_pointer_next.A
+    source_pointer.Q -> source_increment.A, read_address.A, source_pointer_next.B
+    destination_pointer.Q -> destination_increment.A
+    destination_pointer.Q -> destination_pointer_next.B
+    source_pointer_next.Y -> source_pointer.D
+    destination_pointer_next.Y -> destination_pointer.D
+    control.COUNT_EN -> source_pointer_next.S, destination_pointer_next.S
+    source_increment.Y -> read_address.B
+    control.READ_REQ -> read_address.S
+    read_address.Y -> request_gate.ADDR_IN
+    request_gate.ADDR_OUT -> memory_address
+
+    memory_read_data -> write_data.D
+    write_data.Q -> request_gate.DATA_IN
+    request_gate.DATA_OUT -> memory_write_data
+    control.READ_REQ -> request_gate.READ
+    control.WRITE_REQ -> request_gate.WRITE
+    request_gate.WE -> memory_write
+
+}

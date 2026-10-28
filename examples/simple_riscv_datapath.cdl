@@ -1,0 +1,57 @@
+version 1
+
+diagram "Simple RISC-V Datapath" {
+    direction LR
+    layout balanced
+
+    input pc[32], instruction[32], one[32]
+    input rs1_value[32], rs2_value[32], immediate[32], opcode[4]
+    input branch_taken, clk
+    output next_pc[32], writeback[32], memory_address[32], memory_write
+
+    decode: box "Instruction Decode" {
+        in INSTR[32]
+        out OP[4], RS1[5], RS2[5], RD[5], IMM[32]
+        out REGWRITE, MEMWRITE, BRANCH
+    }
+    registers: box "Integer Register File" {
+        in RA1[5], RA2[5], WA[5], WD[32], WE, CLK
+        out RD1[32], RD2[32]
+    }
+    execute: ALU(width=32, op_width=4)
+    pc_plus_four: ADD(width=32)
+    branch_adder: ADD(width=32)
+    pc_select: MUX(width=32)
+    load_store: box "Data Memory" {
+        in ADDR[32], WDATA[32], WE, CLK
+        out RDATA[32]
+    }
+    writeback_select: MUX(width=32)
+
+    instruction -> decode.INSTR
+    decode.RS1 -> registers.RA1
+    decode.RS2 -> registers.RA2
+    decode.RD -> registers.WA
+    decode.REGWRITE -> registers.WE
+    clk -> registers.CLK, load_store.CLK
+
+    rs1_value -> execute.A
+    rs2_value -> execute.B
+    opcode -> execute.OP
+    pc -> pc_plus_four.A
+    one -> pc_plus_four.B
+    pc -> branch_adder.A
+    immediate -> branch_adder.B
+    pc_plus_four.Y -> pc_select.A
+    branch_adder.Y -> pc_select.B
+    branch_taken -> pc_select.S
+    pc_select.Y -> next_pc
+
+    execute.Y -> load_store.ADDR, memory_address
+    rs2_value -> load_store.WDATA
+    decode.MEMWRITE -> load_store.WE, memory_write
+    execute.Y -> writeback_select.A
+    load_store.RDATA -> writeback_select.B
+    decode.BRANCH -> writeback_select.S
+    writeback_select.Y -> registers.WD, writeback
+}

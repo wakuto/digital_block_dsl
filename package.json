@@ -1,0 +1,32 @@
+{
+  "name": "@wakuto/digital-block-dsl",
+  "version": "0.5.0",
+  "description": "Browser-ready TypeScript core for Circuit Diagram DSL",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": { "cdiag": "./dist/cli.js" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "cdiag": "node dist/cli.js"
+  },
+  "dependencies": {
+    "netlist2svg": "1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT"
+}
