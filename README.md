@@ -4,7 +4,82 @@ Circuit Diagram DSL (`cdiag`) turns a small text description of a microarchitect
 
 ## Example
 
-Input: [`simple_riscv_datapath.cdl`](examples/simple_riscv_datapath.cdl)
+<details>
+<summary>Source: <a href="examples/simple_riscv_datapath.cdl">simple_riscv_datapath.cdl</a></summary>
+
+```text
+version 1
+
+diagram "Simple RISC-V Datapath" {
+    direction LR
+    layout feedback
+
+    pc: box "PC" {
+        in NEXT[32]
+        out VALUE[32]
+    }
+    pc_incrementer: box "PC Incrementer" {
+        in PC[32]
+        out NEXT[32]
+    }
+    instruction_memory: box "Instruction Memory" {
+        in ADDR[32]
+        out INSTR[32]
+    }
+    decode: box "Instruction Decode" {
+        in INSTR[32]
+        out OP[4], RS1[5], RS2[5], RD[5], IMM[32]
+        out REGWRITE, MEMWRITE, MEMTOREG, ALUSRC, BRANCH
+    }
+    registers: box "Integer Register File" {
+        in RA1[5], RA2[5], WA[5], WD[32], WE
+        out RD1[32], RD2[32]
+    }
+    operand_b_select: MUX(width=32) {
+        label "ALU Operand B"
+    }
+    execute: ALU(width=32, op_width=4)
+    branch_compare: CMP(width=32)
+    branch_control: AND(width=1)
+    branch_adder: ADD(width=32)
+    pc_select: MUX(width=32)
+    data_memory: box "Data Memory" {
+        in ADDR[32], WDATA[32], WE
+        out RDATA[32]
+    }
+    writeback_select: MUX(width=32)
+
+    pc.VALUE -> pc_incrementer.PC, instruction_memory.ADDR
+    instruction_memory.INSTR -> decode.INSTR
+    decode.RS1 -> registers.RA1
+    decode.RS2 -> registers.RA2
+    decode.RD -> registers.WA
+    decode.REGWRITE -> registers.WE
+
+    registers.RD1 -> execute.A, branch_compare.A
+    registers.RD2 -> operand_b_select.A, branch_compare.B, data_memory.WDATA
+    decode.IMM -> operand_b_select.B
+    decode.ALUSRC -> operand_b_select.S
+    decode.OP -> execute.OP
+    operand_b_select.Y -> execute.B
+    pc.VALUE -> branch_adder.A
+    decode.IMM -> branch_adder.B
+    pc_incrementer.NEXT -> pc_select.A
+    branch_adder.Y -> pc_select.B
+    decode.BRANCH -> branch_control.A
+    branch_compare.Y -> branch_control.B
+    branch_control.Y -> pc_select.S
+    pc_select.Y -> pc.NEXT
+
+    execute.Y -> data_memory.ADDR
+    decode.MEMWRITE -> data_memory.WE
+    execute.Y -> writeback_select.A
+    data_memory.RDATA -> writeback_select.B
+    decode.MEMTOREG -> writeback_select.S
+    writeback_select.Y -> registers.WD
+}
+```
+</details>
 
 Output:
 
@@ -83,6 +158,10 @@ npm run cdiag -- bundle FILE.cdl -o BASENAME
 - [`dma_engine.cdl`](examples/dma_engine.cdl) — transfer control, source and destination pointers, byte counter and memory interface.
 - The [`examples/`](examples) directory also contains scheduler, memory pipeline, feedback and bit-manipulation diagrams.
 
+The logic example shows the built-in gate symbols and comparator operators:
+
+![Rendered logic primitives](examples/rendered/logic_primitives.svg)
+
 ## CDL syntax
 
 Each file contains one version 1 diagram. Declarations are separated by whitespace or newlines; `//` starts a comment.
@@ -125,9 +204,11 @@ diagram "Execution Datapath" {
 | `id: box "Label" { in A[32] out Y[32] }` | Custom block with explicitly declared ports |
 | `in CLK@north`, `out Y@east` | Optional port side: `west`, `east`, `north`, or `south` |
 | `style logic`, `storage`, `control`, `neutral`, `accent` | Block fill color role |
-| `label "Text"` | Display label override inside a typed block |
+| `label "Text"` | Display label override inside a typed block (not shown for `MUX`) |
 
-Built-ins are `ADD`, `SUB`, `SHIFT`, `SHL`, `SHR`, `SAR`, `AND`, `OR`, `XOR`, `NOT`, `MUX`, `DFF`, `CMP`, `ALU`, and `SRAM`. Logic and arithmetic operators render with familiar symbols such as `+`, `∧`, `∨`, and `¬`. `CMP` displays `=` by default; set `op="ne"` for `≠`. Use `box` for other components. Parameters include `width`, `addr_width`, `op_width`, and `shamt_width` where applicable. Shift amount width defaults to `ceil(log2(width))`, with a minimum of one bit.
+Built-ins are `ADD`, `SUB`, `SHIFT`, `SHL`, `SHR`, `SAR`, `AND`, `OR`, `XOR`, `NOT`, `MUX`, `DFF`, `CMP`, `ALU`, and `SRAM`. `AND`, `OR`, and `NOT` render as MIL logic-gate symbols. `ADD` and `SUB` use `+` and `−`; `CMP` displays `=` by default and `≠` when declared as `CMP(width=32, op="ne")`. Use `box` for other components. Parameters include `width`, `addr_width`, `op_width`, and `shamt_width` where applicable. Shift amount width defaults to `ceil(log2(width))`, with a minimum of one bit.
+
+Port names remain part of the CDL connections. For a cleaner diagram, the renderer hides port labels on logic gates and multiplexers; the MUX select and output names are hidden as well.
 
 ### Connections, slices and concatenation
 
@@ -148,7 +229,7 @@ The complete wiring is preserved in `diagram.wirings`. The legacy `diagram.nets`
 
 ## Symbols and rendering
 
-Operators use compact rounded symbols with familiar arithmetic and logic glyphs. `MUX` is tapered, `ALU` has a left-side notch, `DFF` has a clock marker, and `SRAM` is a plain rectangle. Custom `box` blocks use rectangular symbols. Port anchors and layout options are encoded in the generated Skin, and Netlist2SVG with ELK routes the connections.
+Arithmetic and comparison operators use compact symbols; logic gates use MIL shapes. `MUX` is a narrow tapered symbol without an internal name, `ALU` has a left-side notch, `DFF` has a clock marker, and `SRAM` is a plain rectangle. Custom `box` blocks use rectangular symbols. Port anchors and layout options are encoded in the generated Skin, and Netlist2SVG with ELK routes the connections.
 
 The layout presets guide the algorithm; they cannot guarantee short routes for every feedback graph. Generated Skin SVGs are templates, not final diagrams. Final output comes from the `render` command or Netlist2SVG rendering a matched bundle.
 
