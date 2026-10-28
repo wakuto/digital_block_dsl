@@ -1,77 +1,91 @@
-# Circuit Diagram DSL (`cdiag`) v0.4
+# Circuit Diagram DSL
 
-> **TypeScript implementation:** the `src/` directory contains the parser, semantic checker, IR, Yosys JSON backend, Netlist2SVG skin generator and CLI. The core parser and serializers have no runtime dependencies and can be bundled into a browser application. Python implementation files have been removed.
+Circuit Diagram DSL (`cdiag`) turns a small text description of a microarchitecture into an SVG block diagram. It describes blocks and connections; it is not an HDL or simulator. The compiler and CLI are written in TypeScript, and Netlist2SVG performs the SVG layout and rendering.
 
-Build the TypeScript package with Docker (no host Node.js/npm installation required):
+## Example
 
-```powershell
+Input: [`simple_riscv_datapath.cdl`](examples/simple_riscv_datapath.cdl)
+
+Output:
+
+![Rendered Simple RISC-V Datapath](examples/rendered/simple_riscv_datapath.svg)
+
+## Quick start
+
+Build the TypeScript package and render an example directly from its CDL source:
+
+```sh
 docker compose run --rm typescript
+docker compose run --rm typescript npm run cdiag -- render examples/simple_riscv_datapath.cdl -o build/simple_riscv_datapath.svg
 ```
 
-The generated JavaScript and type declarations are written to `dist/`. For a local Node.js setup instead, run `npm install` followed by `npm run build`.
+The first command compiles the package. The second writes the rendered SVG to `build/`. The Docker environment includes Netlist2SVG, so no host Node.js installation is required.
 
-Use the Node.js API to pass source text and receive a finished SVG string:
+With Node.js installed locally, use `npm install` and `npm run build`, then run:
+
+```sh
+npm run cdiag -- render examples/simple_riscv_datapath.cdl -o build/simple_riscv_datapath.svg
+```
+
+## Use from an application
+
+The renderer accepts CDL source text and resolves to an SVG string. Node applications can use the bundled Netlist2SVG renderer:
 
 ```ts
 import { renderSvg } from "@wakuto/digital-block-dsl/node";
 
-const svg = await renderSvg(sourceText, { theme: "light", layout: "balanced" });
+const svgText = await renderSvg(sourceText, {
+  theme: "light",
+  layout: "balanced",
+});
 ```
 
-For browser apps, connect the same source-to-SVG function to Netlist2SVG's web renderer:
+Browser applications can connect the same source-to-SVG adapter to Netlist2SVG's web renderer:
 
 ```ts
-import { createRenderer, type Netlist2SvgEngine } from "@wakuto/digital-block-dsl";
+import {
+  createRenderer,
+  type Netlist2SvgEngine,
+} from "@wakuto/digital-block-dsl";
 
-declare global { interface Window { netlist2svg: Netlist2SvgEngine } }
+declare global {
+  interface Window { netlist2svg: Netlist2SvgEngine }
+}
+
 const renderSvg = createRenderer(window.netlist2svg);
 const svgText = await renderSvg(sourceText);
-previewImage.src = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
+previewImage.src = URL.createObjectURL(
+  new Blob([svgText], { type: "image/svg+xml" }),
+);
 ```
 
-Load Netlist2SVG's browser bundle and ELK bundle before this code; its [web bundle documentation](https://github.com/ajsb85/netlist2svg#web-bundle) describes those assets. The `createRenderer` adapter keeps the DSL-to-SVG API consistent across apps.
+Load Netlist2SVG's browser bundle and ELK bundle before calling `createRenderer`; see the [Netlist2SVG web bundle guide](https://github.com/ajsb85/netlist2svg#web-bundle). The DSL parser, semantic checks, JSON generation and Skin generation are also exported separately for applications that need those stages.
 
-The TypeScript CLI supports source validation, JSON output, bundles and direct SVG rendering with Netlist2SVG:
+For a page that stores CDL inline, read the source from a `<script type="text/cdl">` element and pass its text to `renderSvg`. The same pattern works with fetched files, editor contents or a server response.
+
+## CLI
 
 ```sh
-npm run cdiag -- check examples/execution.cdl
-npm run cdiag -- dump-ir examples/execution.cdl -o build/execution.ir.json
-npm run cdiag -- dump-netlist examples/execution.cdl -o build/execution.json
-npm run cdiag -- bundle examples/execution.cdl -o build/execution
-npm run cdiag -- render examples/execution.cdl -o build/execution.svg
+npm run cdiag -- check FILE.cdl
+npm run cdiag -- render FILE.cdl -o OUTPUT.svg [--theme light|dark|mono] [--layout compact|balanced|feedback]
+npm run cdiag -- dump-ir FILE.cdl [-o OUTPUT.json]
+npm run cdiag -- dump-netlist FILE.cdl [-o OUTPUT.json]
+npm run cdiag -- bundle FILE.cdl -o BASENAME
 ```
 
-A **text-driven, AI-friendly block-diagram language** for microarchitecture documentation. It is a diagram generator, **not a hardware description or simulation language**.
+`render` is the usual path: it parses the source and returns a final SVG using Netlist2SVG. `bundle` writes a matched `BASENAME.json` and `BASENAME.skin.svg` pair for manual or offline rendering. Keep the two files from a bundle together. `dump-netlist` emits the stock-Skin JSON format; `bundle` emits JSON with per-instance Skin cell types.
 
-The central feature is a paired **Yosys-compatible JSON netlist + automatically generated Netlist2SVG Skin**. Each block gets its own SVG template. That allows arbitrary block names and port counts, compact rounded ADD/SUB/SHIFT/CMP symbols, DFF/MUX/ALU/SRAM symbols, and `@north/@south/@west/@east` pin positions without modifying Netlist2SVG.
+## Examples
 
-The TypeScript package and Netlist2SVG build into the included Docker Compose environment.
+- [`simple_riscv_datapath.cdl`](examples/simple_riscv_datapath.cdl) — PC and incrementer, instruction memory and decode, register-file read/write paths, ALU operand mux, branch compare, data memory and writeback.
+- [`logic_primitives.cdl`](examples/logic_primitives.cdl) — arithmetic and logic operators, including equality and inequality comparators.
+- [`streaming_fir.cdl`](examples/streaming_fir.cdl) — a three-tap FIR pipeline with sample delays, multipliers and an adder tree.
+- [`dma_engine.cdl`](examples/dma_engine.cdl) — transfer control, source and destination pointers, byte counter and memory interface.
+- The [`examples/`](examples) directory also contains scheduler, memory pipeline, feedback and bit-manipulation diagrams.
 
-## First use
+## CDL syntax
 
-```bash
-# Create a matched JSON + Skin pair:
-npm run cdiag -- bundle examples/execution.cdl -o build/execution
-# --> build/execution.json + build/execution.skin.svg
-
-# Generate a final SVG directly from CDL with Netlist2SVG:
-docker compose run --rm typescript npm run cdiag -- render examples/execution.cdl -o build/execution.svg
-
-# Compile the TypeScript package in Docker:
-docker compose run --rm typescript
-```
-
-## Example block diagrams
-
-- [`simple_riscv_datapath.cdl`](examples/simple_riscv_datapath.cdl): instruction decode, register file, ALU, branch selection, memory and writeback.
-- [`streaming_fir.cdl`](examples/streaming_fir.cdl): a three-tap FIR pipeline with sample delays, multipliers, an adder tree and valid tracking.
-- [`dma_engine.cdl`](examples/dma_engine.cdl): transfer control, source/destination pointers, byte counter and memory request interface with a feedback-oriented layout.
-
-Validate all three with `npm run cdiag -- check examples/<name>.cdl`, render directly from their CDL files, or create a JSON + Skin pair with the `bundle` command above.
-
-**Important:** Do not mix JSON and Skin files from different bundles. Bundle output uses distinct `CDL__<instance>` cell types which match its per-instance Skin. The `dump-netlist` command emits the stock-Skin format.
-
-## Syntax
+Each file contains one version 1 diagram. Declarations are separated by whitespace or newlines; `//` starts a comment.
 
 ```text
 version 1
@@ -79,181 +93,79 @@ version 1
 diagram "Execution Datapath" {
     direction LR
     theme light
-    layout feedback
-    netlabels on
+    layout balanced
 
     input a[32], b[32], enable, clk
-    output y[32]
+    output result[32]
 
     add: ADD(width=32)
-    mux: MUX(width=32) {
-        in S@south
-    }
-    reg: DFF(width=32) {
-        label "Result Register"
-        in CLK@north
-        style storage
-    }
-    memory: box "Data SRAM" {
-        style storage
-        in ADDR[32], WE
-        in CLK@north
-        out RDATA[32]
-    }
+    mux: MUX(width=32) { in S@south }
+    reg: DFF(width=32) { in CLK@north }
 
     a -> add.A
     b -> add.B
-    add.Y -> mux.A, memory.ADDR
-    memory.RDATA -> mux.B
+    add.Y -> mux.A
+    reg.Q -> mux.B
     enable -> mux.S
     mux.Y -> reg.D
-    clk -> reg.CLK, memory.CLK
-    net result_bus[32] = reg.Q -> y
+    clk -> reg.CLK
+    reg.Q -> result
 }
 ```
 
-The above is syntactically and structurally valid. **Use `examples/*.cdl` for additional runnable diagrams.**
+### Diagram and block settings
 
-### Bit slicing and concatenation (v0.3)
-
-Bit selections use **zero-based, inclusive, LSB-indexed bit numbers**. An
-unselected endpoint is an entire bus. The width declaration `a[32]` declares
-**32 bits**, whereas the *expression* `a[7]` selects **bit 7**:
-
-```text
-version 1
-
-diagram "Bit Wiring" {
-    input hi[8], lo[8], data[32]
-    output joined[16], high[16], low[8], bit_7[1]
-
-    {hi, lo} -> joined
-    data[31:16] -> high
-    data[7:0] -> low
-    data[7] -> bit_7
-}
-```
-
-Concatenation is **most-significant-part first**, exactly like Verilog's
-`{hi, lo}`. The generated Yosys JSON has the `lo` bits at its lower indices.
-Slicing is allowed on output ports of blocks and inputs of diagram, as well as
-on input ports of blocks and outputs of diagram when used as sinks:
-
-```text
-    a -> decoder.INSTR[15:8]
-    b -> decoder.INSTR[7:0]
-    {decoder.OPCODE, decoder.IMM} -> register.D
-    register.Q[15:8] -> high
-```
-
-No additional hardware operation is modeled: the compiler maps the individual
-bit IDs. Netlist2SVG's split/join detection can depict the necessary wiring
-junctions. Concatenations with multiple parts are supported; an individual
-part may itself be a slice. Nesting braces inside braces, bit constants,
-permutations other than explicit concatenation, and arbitrary bit expressions
-are not currently supported.
-
-Widths are checked exactly, without implicit truncation, zero/sign extension
-or padding. A sliced endpoint must have a width *explicitly declared* on its
-port (width inference alone is not enough). All destination bits are checked
-for multiple distinct drivers, including overlapping partial assignments.
-Omitted widths on whole-port connections may be inferred; in concatenations,
-there must be at most one unknown component with a known total width.
-
-The canonical IR stores all connections in `wirings`. The original `nets`
-collection is retained for whole-port legacy connections only; use `wirings`
-for any programmatic inspection that must include slices or concatenations.
-
-### Diagram symbols (v0.4)
-
-The default generated skin uses:
-
-| Kind | Shape | Notes |
-|---|---|---|
-| `ADD`, `SUB`, `CMP`, `SHIFT`, `SHL`, `SHR`, `SAR` | Compact rounded rectangles | Only the operator name appears; narrow block sizes, ports on rectangle edges |
-| `AND`, `OR`, `XOR`, `NOT` | Compact rounded rectangles | Same sizing as arithmetic operators |
-| `MUX` | Trapezoid with broad input edge and **23% height** output edge | A/B enter left; selector S defaults to the lower sloping side; Y exits right |
-| `ALU` | Classic concave V-notch on the left, sloping top/bottom | A/B enter on the left, OP defaults to the top sloping edge; Y exits right |
-| `DFF` | Register box with clock edge triangle | Default D/CLK input and Q output |
-| `SRAM` | Plain labeled rectangle | No internal horizontal lines or memory-cell decoration |
-| `box "Name"` | Generic labeled rectangle | Use this for arbitrary user-defined units; **Issue Scheduler is not a builtin** |
-
-The shape conventions follow textbook microarchitecture diagrams, rather than
-strict schematic symbols for physical integrated circuits. Most settings affect
-only the rendered SVG Skin. `MUX.S` and `ALU.OP` have new default port sides,
-but the DSL still allows explicit `in S@west` or `in OP@west` overrides.
-
-All the width parameters and bit slicing/concatenation introduced in v0.3
-remain unchanged. The shift amount width defaults to `ceil(log2(width))`,
-minimum one bit, overridable via `shamt_width=N`.
-
-For final Netlist2SVG rendering, always use the matching JSON + Skin pair produced by `npm run cdiag -- bundle`.
-
-### Supported declarations
-
-| Syntax | Meaning |
+| Declaration | Meaning |
 |---|---|
-| `direction LR\|RL\|TB\|BT` | Drawing direction, default LR |
-| `theme light\|dark\|mono` | Global SVG palette |
-| `layout compact\|balanced\|feedback` | ELK spacing / cycle breaking preset; default balanced |
-| `netlabels on\|off` | Retain the flag in IR; automatic post-render labels are not currently generated |
-| `name: TYPE(width=N)` | Built-in component: `ADD`, `SUB`, `MUX`, `DFF`, `CMP`, `ALU`, `SRAM`, gates |
-| `id: box "Label" { in A; out Y }` | Arbitrary named box |
-| `in CLK@north` | Named input port on a requested side |
-| `style logic\|storage\|control\|neutral\|accent` | Per-block color role |
-| `label "..."` | Display name override on typed block |
-| `p.Q -> q.D, r.A` | Single driver, multiple sinks |
-| `p.Q[15:8] -> q.D[7:0]` | Slice with an inclusive bit range |
-| `p.Q[7] -> out` | Select a single bit; output must be one bit |
-| `{hi, lo} -> combined` | Concatenate signals, most-significant first |
-| `net output_bus[32] = p.Q -> q.D` | Named net; `[32]` is 32 bits |
+| `direction LR`, `RL`, `TB`, `BT` | Diagram direction; defaults to `LR` |
+| `theme light`, `dark`, `mono` | SVG color theme |
+| `layout compact`, `balanced`, `feedback` | ELK spacing and cycle-breaking preset |
+| `netlabels on`, `off` | Retained in the IR; automatic post-render labels are not implemented |
+| `id: TYPE(width=32)` | Built-in block with named ports |
+| `id: box "Label" { in A[32] out Y[32] }` | Custom block with explicitly declared ports |
+| `in CLK@north`, `out Y@east` | Optional port side: `west`, `east`, `north`, or `south` |
+| `style logic`, `storage`, `control`, `neutral`, `accent` | Block fill color role |
+| `label "Text"` | Display label override inside a typed block |
 
-Widths omitted mean *unspecified*, not 1 bit. The compiler infers widths across one net and rejects incompatible explicit widths. There is no silent truncation or padding, no RTL expressions, and no electrical semantics. Empty unconnected ports are permitted.
+Built-ins are `ADD`, `SUB`, `SHIFT`, `SHL`, `SHR`, `SAR`, `AND`, `OR`, `XOR`, `NOT`, `MUX`, `DFF`, `CMP`, `ALU`, and `SRAM`. Logic and arithmetic operators render with familiar symbols such as `+`, `∧`, `∨`, and `¬`. `CMP` displays `=` by default; set `op="ne"` for `≠`. Use `box` for other components. Parameters include `width`, `addr_width`, `op_width`, and `shamt_width` where applicable. Shift amount width defaults to `ceil(log2(width))`, with a minimum of one bit.
 
-### Routing caveats
+### Connections, slices and concatenation
 
-The program asks **ELK** for orthogonal routing and provides preset spacing/cycle breaking options. The `feedback` preset allocates somewhat more space to feedback loops, but **cannot promise zero long detours** in every graph. Diagram layout remains a heuristic optimization. Per-pin sides are encoded in Skin template anchor geometry, while inter-block placement remains automatic.
-
-The Netlist2SVG skin format supports `s:pid`, `s:x`, `s:y`, `s:width` and `s:height`, and ELK global options in `s:properties`. This tool generates templates with these fields. `<s:generic>` placeholders and Netlist2SVG special node templates are included. The upstream renderer might require compatibility adjustments for particular releases.
-
-### Names on wires
-
-Named nets are included in the generated Yosys JSON. Automatic post-render SVG label placement is not currently part of the TypeScript implementation.
-
-### AsciiDoc
-
-```asciidoc
-.Execution Datapath
-image::build/execution.svg[width=800]
+```text
+a -> add.A
+add.Y -> mux.A, result
+data[31:16] -> upper_half
+data[7] -> selected_bit
+{high, low} -> combined
+net writeback[32] = reg.Q -> result
 ```
 
-Generate the SVG with Netlist2SVG from the matching JSON + Skin pair before rendering the AsciiDoc document.
+Widths such as `a[32]` declare a 32-bit port. Slice expressions such as `data[7]` select zero-based inclusive bit indices. Concatenations are most-significant part first: `{high, low}` places `low` at the least significant bits.
 
-## AI workflow
+The compiler infers unspecified widths across whole-port connections. It rejects width mismatches, reversed or out-of-range slices, and destination bits with multiple distinct drivers. Slices require explicitly sized ports. In a concatenation, at most one source part may have an inferred width, and its width must be determined by the connection.
 
-Read [AGENTS.md](AGENTS.md). For each changed diagram: write/edit `.cdl` → `npm run cdiag -- check` → `npm run cdiag -- render` → inspect the SVG and revise as necessary. Use `bundle` when you need the intermediate JSON + Skin pair.
+The complete wiring is preserved in `diagram.wirings`. The legacy `diagram.nets` list includes whole-port connections only.
 
-## CLI summary
+## Symbols and rendering
 
+Operators use compact rounded symbols with familiar arithmetic and logic glyphs. `MUX` is tapered, `ALU` has a left-side notch, `DFF` has a clock marker, and `SRAM` is a plain rectangle. Custom `box` blocks use rectangular symbols. Port anchors and layout options are encoded in the generated Skin, and Netlist2SVG with ELK routes the connections.
+
+The layout presets guide the algorithm; they cannot guarantee short routes for every feedback graph. Generated Skin SVGs are templates, not final diagrams. Final output comes from the `render` command or Netlist2SVG rendering a matched bundle.
+
+Named nets are included in the generated Yosys JSON. Automatic placement of named-net text labels on the rendered SVG is not currently implemented.
+
+## Development
+
+```sh
+docker compose run --rm typescript
+docker compose run --rm typescript npm run cdiag -- check examples/execution.cdl
 ```
-npm run cdiag -- check FILE.cdl
-npm run cdiag -- dump-ir FILE.cdl [-o file.json]
-npm run cdiag -- dump-netlist FILE.cdl [-o file.json]  # stock skin format
-npm run cdiag -- bundle FILE.cdl -o BASENAME
-npm run cdiag -- render FILE.cdl -o out.svg [--theme light|dark|mono] [--layout compact|balanced|feedback]
-```
 
-## Scope / limitations
+- `src/parser.ts` — tokenizer, parser, semantic checks, width inference and IR construction
+- `src/netlist.ts` — Yosys-compatible JSON
+- `src/skin.ts` — Netlist2SVG Skin generation
+- `src/render-core.ts` — renderer adapter for Node or browser engines
+- `src/node.ts` — Node API backed by the installed Netlist2SVG package
+- `src/cli.ts` — command-line interface
 
-Module reuse / hierarchical groups, constants, HDL functions, bidirectional interface bundles, manual routes, complex layout order constraints, IDE support, and interactive zoom remain out of scope. Generated Skin SVG itself is a **template file**, not the final layout; pair it with the JSON and render via Netlist2SVG.
-
-## Source
-
-- `src/parser.ts`: tokenizer, parser, semantic checker, width inference and IR construction
-- `src/symbols.ts`: built-in block port definitions and parameter validation
-- `src/netlist.ts`: Yosys-compatible JSON output
-- `src/skin.ts`: per-instance SVG symbols and ELK layout settings
-- `src/cli.ts`: Node.js command-line entry point
-- `Dockerfile` / `compose.yaml`: reproducible TypeScript build environment
-
-See [Netlist2SVG](https://github.com/ajsb85/netlist2svg) and [ELK](https://eclipse.dev/elk/) for the renderer/route algorithm.
+Module reuse, hierarchical groups, constants, HDL expressions, bidirectional bundles, manual routes and interactive editing are outside the current scope.

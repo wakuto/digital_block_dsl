@@ -1,0 +1,28 @@
+version 1
+
+diagram "Logic and Arithmetic Primitives" {
+    direction LR
+
+    input a[8], b[8]
+    output sum[8], difference[8]
+    output both[8], either[8], inverted[8]
+    output equal, not_equal
+
+    add: ADD(width=8)
+    subtract: SUB(width=8)
+    and_gate: AND(width=8)
+    or_gate: OR(width=8)
+    not_gate: NOT(width=8)
+    equal_compare: CMP(width=8)
+    not_equal_compare: CMP(width=8, op="ne")
+
+    a -> add.A, subtract.A, and_gate.A, or_gate.A, not_gate.A, equal_compare.A, not_equal_compare.A
+    b -> add.B, subtract.B, and_gate.B, or_gate.B, equal_compare.B, not_equal_compare.B
+    add.Y -> sum
+    subtract.Y -> difference
+    and_gate.Y -> both
+    or_gate.Y -> either
+    not_gate.Y -> inverted
+    equal_compare.Y -> equal
+    not_equal_compare.Y -> not_equal
+}

@@ -2,56 +2,69 @@ version 1
 
 diagram "Simple RISC-V Datapath" {
     direction LR
-    layout balanced
+    layout feedback
 
-    input pc[32], instruction[32], one[32]
-    input rs1_value[32], rs2_value[32], immediate[32], opcode[4]
-    input branch_taken, clk
-    output next_pc[32], writeback[32], memory_address[32], memory_write
-
+    pc: box "PC" {
+        in NEXT[32]
+        out VALUE[32]
+    }
+    pc_incrementer: box "PC Incrementer" {
+        in PC[32]
+        out NEXT[32]
+    }
+    instruction_memory: box "Instruction Memory" {
+        in ADDR[32]
+        out INSTR[32]
+    }
     decode: box "Instruction Decode" {
         in INSTR[32]
         out OP[4], RS1[5], RS2[5], RD[5], IMM[32]
-        out REGWRITE, MEMWRITE, BRANCH
+        out REGWRITE, MEMWRITE, MEMTOREG, ALUSRC, BRANCH
     }
     registers: box "Integer Register File" {
-        in RA1[5], RA2[5], WA[5], WD[32], WE, CLK
+        in RA1[5], RA2[5], WA[5], WD[32], WE
         out RD1[32], RD2[32]
     }
+    operand_b_select: MUX(width=32) {
+        label "ALU Operand B"
+    }
     execute: ALU(width=32, op_width=4)
-    pc_plus_four: ADD(width=32)
+    branch_compare: CMP(width=32)
+    branch_control: AND(width=1)
     branch_adder: ADD(width=32)
     pc_select: MUX(width=32)
-    load_store: box "Data Memory" {
-        in ADDR[32], WDATA[32], WE, CLK
+    data_memory: box "Data Memory" {
+        in ADDR[32], WDATA[32], WE
         out RDATA[32]
     }
     writeback_select: MUX(width=32)
 
-    instruction -> decode.INSTR
+    pc.VALUE -> pc_incrementer.PC, instruction_memory.ADDR
+    instruction_memory.INSTR -> decode.INSTR
     decode.RS1 -> registers.RA1
     decode.RS2 -> registers.RA2
     decode.RD -> registers.WA
     decode.REGWRITE -> registers.WE
-    clk -> registers.CLK, load_store.CLK
 
-    rs1_value -> execute.A
-    rs2_value -> execute.B
-    opcode -> execute.OP
-    pc -> pc_plus_four.A
-    one -> pc_plus_four.B
-    pc -> branch_adder.A
-    immediate -> branch_adder.B
-    pc_plus_four.Y -> pc_select.A
+    registers.RD1 -> execute.A, branch_compare.A
+    registers.RD2 -> operand_b_select.A, branch_compare.B, data_memory.WDATA
+    decode.IMM -> operand_b_select.B
+    decode.ALUSRC -> operand_b_select.S
+    decode.OP -> execute.OP
+    operand_b_select.Y -> execute.B
+    pc.VALUE -> branch_adder.A
+    decode.IMM -> branch_adder.B
+    pc_incrementer.NEXT -> pc_select.A
     branch_adder.Y -> pc_select.B
-    branch_taken -> pc_select.S
-    pc_select.Y -> next_pc
+    decode.BRANCH -> branch_control.A
+    branch_compare.Y -> branch_control.B
+    branch_control.Y -> pc_select.S
+    pc_select.Y -> pc.NEXT
 
-    execute.Y -> load_store.ADDR, memory_address
-    rs2_value -> load_store.WDATA
-    decode.MEMWRITE -> load_store.WE, memory_write
+    execute.Y -> data_memory.ADDR
+    decode.MEMWRITE -> data_memory.WE
     execute.Y -> writeback_select.A
-    load_store.RDATA -> writeback_select.B
-    decode.BRANCH -> writeback_select.S
-    writeback_select.Y -> registers.WD, writeback
+    data_memory.RDATA -> writeback_select.B
+    decode.MEMTOREG -> writeback_select.S
+    writeback_select.Y -> registers.WD
 }

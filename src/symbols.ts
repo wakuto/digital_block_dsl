@@ -20,9 +20,10 @@ export function builtinPorts(kind: string, params: Record<string, ParamValue>, l
   else if (kind === "ALU") desc = [["A", "input", width], ["B", "input", width], ["OP", "input", op], ["Y", "output", width]];
   else if (kind === "SRAM") desc = [["ADDR", "input", addr], ["WDATA", "input", width], ["WE", "input", 1], ["CLK", "input", 1], ["RDATA", "output", width]];
   if (!desc) return null;
-  const known = new Set(["width", "addr_width", "op_width", "shamt_width"]), used = new Set(["width", ...(kind === "SRAM" ? ["addr_width"] : []), ...(kind === "ALU" ? ["op_width"] : []), ...(["SHIFT", "SHL", "SHR", "SAR"].includes(kind) ? ["shamt_width"] : [])]);
+  const known = new Set(["width", "addr_width", "op_width", "shamt_width", "op"]), used = new Set(["width", ...(kind === "SRAM" ? ["addr_width"] : []), ...(kind === "ALU" ? ["op_width"] : []), ...(kind === "CMP" ? ["op"] : []), ...(["SHIFT", "SHL", "SHR", "SAR"].includes(kind) ? ["shamt_width"] : [])]);
   const extra = Object.keys(params).filter(k => !known.has(k)).sort();
   if (extra.length) throw new Error(`unsupported parameters for ${kind}: ${extra.join(", ")}`);
+  if (kind === "CMP" && params.op !== undefined && !["eq", "ne"].includes(String(params.op))) throw new Error('op for CMP must be "eq" or "ne"');
   const unused = Object.keys(params).filter(k => !used.has(k)).sort();
   if (unused.length) throw new Error(`unused parameter for ${kind}: ${unused.join(", ")}`);
   const ports: Record<string, Port> = {};

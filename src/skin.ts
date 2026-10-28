@@ -15,21 +15,27 @@ const compact=new Set(["ADD","SUB","SHIFT","SHL","SHR","SAR","CMP","AND","OR","X
 function blockSvg(b:Block,pal:Palette):string{
  const sides:Record<Side,Port[]>={west:[],east:[],north:[],south:[]};for(const p of Object.values(b.ports))sides[p.side??(p.direction==="input"?"west":"east")].push(p);
  const labelLines=b.label.split("\n"),len=(s:Port[])=>s.reduce((n,p)=>Math.max(n,p.name.length),0),maxSide=Math.max(sides.west.length,sides.east.length);
- let w:number,h:number;if(compact.has(b.type)){w=Math.max(66,42+b.label.length*7.5,30+13*Math.max(sides.north.length,sides.south.length));h=Math.max(50,19*maxSide+14);}
- else if(b.type==="MUX"){w=Math.max(67,32+b.label.length*7);h=Math.max(78,24*maxSide+30);}
+ let w:number,h:number;if(["AND","OR","NOT"].includes(b.type)){w=76;h=62;}
+ else if(compact.has(b.type)){w=Math.max(66,42+b.label.length*7.5,30+13*Math.max(sides.north.length,sides.south.length));h=Math.max(50,19*maxSide+14);}
+ else if(b.type==="MUX"){w=29;h=Math.max(78,24*maxSide+30);}
  else if(b.type==="ALU"){w=Math.max(110,40+b.label.length*8);h=Math.max(100,32*maxSide+40);}
  else {w=Math.max(108,18+Math.max(...labelLines.map(x=>x.length))*7.5,42+(len(sides.west)+len(sides.east))*7.2,54+25*Math.max(sides.north.length,sides.south.length));h=Math.max(70,54+24*maxSide,sides.north.length&&sides.south.length?100:70);}
  w=Math.ceil(w);h=Math.ceil(h);const ink=pal.ink,fill=pal[defaultStyle(b) as keyof Palette]??pal.neutral,base={stroke:ink,"stroke-width":1.6,fill,class:"symbol $cell_id"};let shape="";
  if(b.type==="MUX"){const n=.23*h;shape=tag("path",{...base,d:`M 0,0 L ${w},${((h-n)/2).toFixed(2)} L ${w},${((h+n)/2).toFixed(2)} L 0,${h} Z`});}
  else if(b.type==="ALU")shape=tag("path",{...base,d:`M 0,0 L ${w},${(.22*h).toFixed(2)} L ${w},${(.78*h).toFixed(2)} L 0,${h} L 0,${(.65*h).toFixed(2)} L ${(.18*w).toFixed(2)},${(.5*h).toFixed(2)} L 0,${(.35*h).toFixed(2)} Z`});
+ else if(b.type==="AND")shape=tag("path",{...base,d:`M 0,0 L ${(.48*w).toFixed(2)},0 A ${(w*.52).toFixed(2)} ${(h/2).toFixed(2)} 0 0 1 ${(.48*w).toFixed(2)} ${h} L 0,${h} Z`});
+ else if(b.type==="OR")shape=tag("path",{...base,d:`M 0,0 Q ${(w*.56).toFixed(2)},0 ${w},${(h/2).toFixed(2)} Q ${(w*.56).toFixed(2)},${h} 0,${h} Q ${(w*.23).toFixed(2)},${(h/2).toFixed(2)} 0,0 Z`});
+ else if(b.type==="NOT"){shape=tag("path",{...base,d:`M 0,0 L ${(w-8).toFixed(2)},${(h/2).toFixed(2)} L 0,${h} Z`})+tag("circle",{cx:w-4,cy:h/2,r:4,stroke:ink,"stroke-width":1.6,fill});}
  else if(compact.has(b.type))shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:9,ry:9});
  else {shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:b.type==="box"?4:3});if(b.type==="DFF"){const p=b.ports.CLK,side=p?.side??"west";const d=side==="west"?`M 0,${h-16} l 9,6 -9,6`:side==="south"?`M ${w/2-6},${h} l 6,-9 6,9`:side==="north"?`M ${w/2-6},0 l 6,9 6,-9`:`M ${w},${h-16} l -9,6 9,6`;shape+=tag("path",{d,stroke:ink,"stroke-width":1.8,fill:"none"});}}
- const title=b.label==="box"?b.id:b.label,tx=b.type==="MUX"?w*.48:b.type==="ALU"?w*.6:w/2,ty=compact.has(b.type)||b.type==="MUX"||b.type==="ALU"?h/2+4:21,fs=b.type==="ALU"?13:compact.has(b.type)||b.type==="MUX"?11:13;
- let out=`<g s:type="cdiag_${esc(b.id)}" transform="translate(30,20)" s:width="${w}" s:height="${h}"><s:alias val="CDL__${esc(b.id)}"/>${shape}${tag("text",{x:tx.toFixed(2),y:ty.toFixed(2),"text-anchor":"middle","font-size":fs,"font-weight":"bold",fill:ink,stroke:"none"},title)}`;
+ const operators:Record<string,string>={ADD:"+",SUB:"−",CMP:b.params.op==="ne"?"≠":"="};
+ const title=b.type==="MUX"?"":b.label==="box"?b.id:b.label===b.type?(operators[b.type]??(["AND","OR","NOT"].includes(b.type)?"":b.label)):b.label,tx=b.type==="MUX"?w*.48:b.type==="ALU"?w*.6:w/2,ty=compact.has(b.type)||b.type==="MUX"||b.type==="ALU"?h/2+4:21,fs=operators[b.type]?24:b.type==="ALU"?13:compact.has(b.type)||b.type==="MUX"?11:13;
+ let out=`<g s:type="cdiag_${esc(b.id)}" transform="translate(30,20)" s:width="${w}" s:height="${h}" id="cell_${esc(b.id)}"><s:alias val="CDL__${esc(b.id)}"/>${shape}${title?tag("text",{x:tx.toFixed(2),y:ty.toFixed(2),"text-anchor":"middle","font-size":fs,"font-weight":"bold",fill:ink,stroke:"none"},title):""}`;
  for(const side of ["west","east","north","south"] as Side[]){const ps=sides[side];ps.forEach((p,i)=>{let x:number,y:number,tx:number,ty:number,anchor:string;
-   if(side==="west"||side==="east"){y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):h*(i+1)/(ps.length+1);x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(y-h*.5)/(h*.15)):side==="west"?0:w;if(b.type==="MUX"&&side==="east")y=h*.5;tx=x+(side==="west"?7:-7);ty=y-4;anchor=side==="west"?"start":"end";}
+   if(side==="west"||side==="east"){y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):["AND","OR"].includes(b.type)&&side==="west"&&ps.length===2?h*(i===0?.32:.68):["AND","OR","NOT"].includes(b.type)?h*.5:h*(i+1)/(ps.length+1);x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(y-h*.5)/(h*.15)):b.type==="OR"&&side==="west"&&ps.length===2?w*.1:side==="west"?0:w;if(b.type==="MUX"&&side==="east")y=h*.5;tx=x+(side==="west"?7:-7);ty=y+3;anchor=side==="west"?"start":"end";}
    else{x=w*(i+1)/(ps.length+1);y=b.type==="MUX"?h*(side==="north"?.385*x/w:1-.385*x/w):b.type==="ALU"?h*(side==="north"?.22*x/w:1-.22*x/w):side==="north"?0:h;tx=x;ty=y+(side==="north"?(compact.has(b.type)||b.type==="MUX"||b.type==="ALU"?13:35):(compact.has(b.type)?-6:b.type==="MUX"||b.type==="ALU"?-8:h-12));anchor="middle";}
-   out+=`<g s:x="${x.toFixed(2)}" s:y="${y.toFixed(2)}" s:pid="${esc(p.name)}"/><text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="${anchor}" font-size="${compact.has(b.type)?9:10}" fill="${ink}" stroke="none">${esc(p.name)}</text>`;
+   const label=["AND","OR","NOT","MUX"].includes(b.type)?"":p.name;
+   out+=`<g s:x="${x.toFixed(2)}" s:y="${y.toFixed(2)}" s:pid="${esc(p.name)}"/>${label?`<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="${anchor}" font-size="${compact.has(b.type)?9:10}" fill="${ink}" stroke="none">${esc(label)}</text>`:""}`;
   });}
  return out+"</g>";
 }
