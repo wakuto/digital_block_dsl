@@ -1,0 +1,26 @@
+version 1
+
+diagram "Scheduler and ALU" {
+    direction LR
+    input dispatch[128], wakeup[16], op[4], operand[32]
+    output result[32]
+
+    iq: box "Issue Queue" {
+        in DISPATCH[128], WAKEUP[16]
+        out ISSUE[32]
+    }
+    exec: ALU(width=32)
+    bypass: MUX(width=32) {
+        in S@south
+    }
+    pipe: DFF(width=32)
+
+    dispatch -> iq.DISPATCH
+    wakeup -> iq.WAKEUP
+    iq.ISSUE -> exec.A
+    operand -> exec.B, bypass.B
+    op -> exec.OP
+    exec.Y -> bypass.A
+    bypass.Y -> pipe.D
+    pipe.Q -> result
+}

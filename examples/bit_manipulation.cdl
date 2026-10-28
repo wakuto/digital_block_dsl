@@ -1,0 +1,25 @@
+version 1
+
+diagram "Bit Slices and Concatenation" {
+    direction LR
+    theme light
+    layout balanced
+    netlabels off
+
+    input upper[8], lower[8], data[32], shift_amount[5]
+    output joined[16], high_half[16], low_byte[8], bit_seven[1], shifted[32], compare_result[1]
+
+    // The first item in braces is most significant, like Verilog.
+    {upper, lower} -> joined
+    data[31:16] -> high_half
+    data[7:0] -> low_byte
+    data[7] -> bit_seven
+
+    // A 32-bit datapath with circular arithmetic symbols.
+    shift: SHL(width=32)
+    compare: CMP(width=32)
+    data -> shift.A, compare.A
+    shift_amount -> shift.B
+    shift.Y -> shifted, compare.B
+    compare.Y -> compare_result
+}

@@ -1,0 +1,31 @@
+version 1
+
+diagram "Memory Pipeline" {
+    direction LR
+
+    input base[32], offset[32], wdata[32], clk, we, select
+    output read_data[32]
+
+    addr_add: ADD(width=32)
+    addr_mux: MUX(width=32)
+    addr_reg: DFF(width=32)
+    cmp: CMP(width=32)
+    mem: SRAM(width=32, addr_width=32)
+    ctrl: box "Memory Controller" {
+        in ADDR[32], CLK
+        out READY
+    }
+
+    base -> addr_add.A
+    offset -> addr_add.B
+    addr_add.Y -> addr_mux.A, cmp.A
+    base -> addr_mux.B
+    select -> addr_mux.S
+    addr_mux.Y -> addr_reg.D
+    clk -> addr_reg.CLK, mem.CLK, ctrl.CLK
+    addr_reg.Q -> mem.ADDR, ctrl.ADDR
+    wdata -> mem.WDATA
+    we -> mem.WE
+    mem.RDATA -> read_data
+    offset -> cmp.B
+}

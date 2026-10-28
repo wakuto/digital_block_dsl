@@ -1,0 +1,26 @@
+version 1
+
+diagram "Concat and Split at Block Ports" {
+    direction LR
+    netlabels off
+    input opcode[4], flags[4], imm[8], clk
+    output op_high[8], op_low[8]
+
+    decoder: box "Instruction Decoder" {
+        in INSTR[16]
+        out OPCODE[8], IMM[8]
+    }
+    register: DFF(width=16) {
+        label "Instruction Register"
+        in CLK@north
+    }
+
+    // Directly drive a port in pieces. This is a wiring join, not logic.
+    opcode -> decoder.INSTR[15:12]
+    flags -> decoder.INSTR[11:8]
+    imm -> decoder.INSTR[7:0]
+    {decoder.OPCODE, decoder.IMM} -> register.D
+    clk -> register.CLK
+    register.Q[15:8] -> op_high
+    register.Q[7:0] -> op_low
+}

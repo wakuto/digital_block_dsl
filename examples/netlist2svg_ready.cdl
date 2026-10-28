@@ -1,0 +1,19 @@
+version 1
+
+diagram "Datapath (stock Netlist2SVG skin)" {
+    direction LR
+    input a[32], b[32], select, clk
+    output y[32]
+
+    add: ADD(width=32)
+    mux: MUX(width=32)
+    reg: DFF(width=32)
+
+    a -> add.A
+    b -> add.B, mux.B
+    add.Y -> mux.A
+    select -> mux.S
+    mux.Y -> reg.D
+    clk -> reg.CLK
+    reg.Q -> y
+}

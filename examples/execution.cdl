@@ -1,0 +1,32 @@
+version 1
+
+diagram "Execution Datapath" {
+    direction LR
+
+    input a[32], b[32], addr[12]
+    input sel, clk, wr_en
+    output result[32]
+
+    add0: ADD(width=32)
+    mux0: MUX(width=32)
+    reg0: DFF(width=32)
+
+    mem: box "Data SRAM" {
+        in ADDR[12], WDATA[32], WE
+        in CLK@north
+        out RDATA[32]@east
+    }
+
+    a -> add0.A
+    b -> add0.B
+    add0.Y -> mux0.A
+    mem.RDATA -> mux0.B
+    sel -> mux0.S
+
+    mux0.Y -> reg0.D
+    clk -> reg0.CLK, mem.CLK
+    addr -> mem.ADDR
+    wr_en -> mem.WE
+
+    net writeback[32] = reg0.Q -> mem.WDATA, result
+}

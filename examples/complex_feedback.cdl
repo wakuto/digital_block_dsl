@@ -1,0 +1,64 @@
+version 1
+
+diagram "Out-of-Order Issue / Bypass / Feedback" {
+    direction LR
+    theme light
+    layout feedback
+    netlabels on
+
+    input dispatch[128], wakeup[16], src_a[64], src_b[64]
+    input op[4], clk, enable, reset
+    output result[64], busy
+
+    iq: box "Instruction Scheduler" {
+        style control
+        in DISPATCH[128], WAKEUP[16]
+        in CLK@north
+        out ISSUE[64], ACTIVE
+    }
+    rf: box "Register File" {
+        style storage
+        in RADDR[64], WDATA[64], WE
+        in CLK@north
+        out RDATA[64]
+    }
+    src_mux: MUX(width=64) {
+        in S@south
+    }
+    alu: ALU(width=64,op_width=4)
+    cmp: CMP(width=64)
+    branch: box "Branch Decision" {
+        style control
+        in COMP, ENABLE
+        out TAKEN
+    }
+    output_mux: MUX(width=64) {
+        in S@south
+    }
+    result_reg: DFF(width=64) {
+        label "Result Register"
+        in CLK@north
+    }
+    feedback_mux: MUX(width=64)
+    gate: AND(width=1)
+
+    dispatch -> iq.DISPATCH
+    wakeup -> iq.WAKEUP
+    clk -> iq.CLK, rf.CLK, result_reg.CLK
+    src_a -> src_mux.A, rf.RADDR
+    src_b -> src_mux.B, cmp.B
+    enable -> src_mux.S, branch.ENABLE, gate.A
+    iq.ISSUE -> alu.A
+    op -> alu.OP
+    src_mux.Y -> alu.B
+    alu.Y -> output_mux.A, cmp.A
+    cmp.Y -> branch.COMP
+    branch.TAKEN -> output_mux.S
+    net result_pipe[64] = output_mux.Y -> result_reg.D
+    net forward_result[64] = result_reg.Q -> result, feedback_mux.A, rf.WDATA
+    feedback_mux.Y -> output_mux.B
+    rf.RDATA -> feedback_mux.B
+    iq.ACTIVE -> gate.B
+    gate.Y -> busy, rf.WE
+    reset -> feedback_mux.S
+}

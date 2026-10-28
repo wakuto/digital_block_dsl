@@ -1,0 +1,12 @@
+= Circuit Diagram DSL Demo
+:imagesdir: ../build
+
+== Execution datapath
+
+.Execution datapath generated from CDL
+image::execution.svg[Execution Datapath, width=850]
+
+== Memory pipeline
+
+.Memory pipeline
+image::memory_pipeline.svg[Memory Pipeline, width=850]

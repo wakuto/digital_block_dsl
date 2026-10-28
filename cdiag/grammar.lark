@@ -1,0 +1,47 @@
+// Circuit Diagram DSL v0.1. Statements are separated by newlines.
+start: version_decl diagram_decl
+version_decl: "version" INT
+diagram_decl: "diagram" STRING "{" diagram_stmt* "}"
+?diagram_stmt: direction_decl | theme_decl | layout_decl | netlabels_decl | top_ports | block_decl | net_decl | connection_decl
+direction_decl: "direction" DIRECTION
+theme_decl: "theme" THEME
+layout_decl: "layout" LAYOUT
+netlabels_decl: "netlabels" ENABLE
+top_ports: TOP_DIR port_list
+block_decl: IDENT ":" block_kind block_body?
+?block_kind: "box" STRING -> box_kind
+           | IDENT parameters? -> typed_kind
+parameters: "(" [parameter ("," parameter)*] ")"
+parameter: IDENT "=" value
+?value: INT -> int_value
+      | STRING -> string_value
+      | IDENT -> ident_value
+block_body: "{" (local_ports | style_decl | label_decl)* "}"
+style_decl: "style" STYLE
+label_decl: "label" STRING
+local_ports: LOCAL_DIR port_list
+port_list: port ("," port)*
+port: IDENT width? port_side?
+width: "[" INT "]"
+port_side: "@" SIDE
+connection_decl: source_expr "->" signal_ref ("," signal_ref)*
+net_decl: "net" IDENT width? "=" source_expr "->" signal_ref ("," signal_ref)*
+?source_expr: signal_ref | "{" signal_ref ("," signal_ref)+ "}" -> concat_expr
+signal_ref: endpoint selection?
+selection: "[" INT (":" INT)? "]"
+endpoint: IDENT ("." IDENT)?
+THEME.2: "light" | "dark" | "mono"
+LAYOUT.2: "balanced" | "compact" | "feedback"
+ENABLE.2: "on" | "off"
+STYLE.2: "logic" | "storage" | "control" | "neutral" | "accent"
+DIRECTION.2: "LR" | "RL" | "TB" | "BT"
+TOP_DIR.2: /(?:input|output)(?![A-Za-z_0-9])/
+LOCAL_DIR.2: /(?:in|out)(?![A-Za-z_0-9])/
+SIDE.2: "west" | "east" | "north" | "south"
+IDENT: /[A-Za-z_][A-Za-z_0-9]*/
+INT: /[0-9]+/
+STRING: ESCAPED_STRING
+%import common.ESCAPED_STRING
+%import common.WS
+%ignore WS
+%ignore /\/\/[^\r\n]*/
