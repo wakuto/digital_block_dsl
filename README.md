@@ -77,6 +77,7 @@ With Docker, put `docker compose run --rm typescript` in front of each command. 
 | [`rotation.cdl`](examples/rotation.cdl) | Rotated and flipped blocks |
 | [`pipeline_ranks.cdl`](examples/pipeline_ranks.cdl) | A five-stage pipeline kept in order with `rank` and `group` ([rendered](examples/rendered/pipeline_ranks.svg)) |
 | [`register_file.cdl`](examples/register_file.cdl) | A 2R1W `REGFILE` and south-side port names ([rendered](examples/rendered/register_file.svg)) |
+| [`wide_gates.cdl`](examples/wide_gates.cdl) | AND and OR gates with 3 and 4 inputs |
 | [`bit_manipulation.cdl`](examples/bit_manipulation.cdl) | Concatenation, slices and shifts |
 
 Rendered SVGs are in [`examples/rendered/`](examples/rendered).
@@ -123,7 +124,8 @@ Built-in blocks come with fixed port names and a standard symbol. Every block po
 | Block | Inputs | Outputs | Parameters |
 |---|---|---|---|
 | `ADD`, `SUB` | `A[n]`, `B[n]` | `Y[n]` | `width` |
-| `AND`, `OR`, `XOR` | `A[n]`, `B[n]` | `Y[n]` | `width` |
+| `AND`, `OR` | `A[n]`, `B[n]`, … | `Y[n]` | `width`, `inputs` (2–16; default 2) |
+| `XOR` | `A[n]`, `B[n]` | `Y[n]` | `width` |
 | `NOT` | `A[n]` | `Y[n]` | `width` |
 | `SHIFT`, `SHL`, `SHR`, `SAR` | `A[n]`, `B[m]` | `Y[n]` | `width`, `shamt_width` |
 | `CMP` | `A[n]`, `B[n]` | `Y[1]` | `width`, `op` (`eq` or `ne`, default `eq`) |
@@ -156,6 +158,19 @@ d -> pick.D
 sel[2] -> pick.S
 ```
 
+### AND and OR with more inputs
+
+`AND` and `OR` take `inputs` just like `MUX`. The data inputs are named `A`, `B`, `C`, and so on, and every input has the same `width`. The symbol grows taller to fit the extra pins.
+
+```text
+ready: AND(width=1, inputs=3)
+a -> ready.A
+b -> ready.B
+c -> ready.C
+```
+
+See [`wide_gates.cdl`](examples/wide_gates.cdl).
+
 ### DEMUX, DECODER, ENCODER and FIFO
 
 - `DEMUX(width=8, outputs=4)` routes `A` to one of `Y0`–`Y3`, chosen by `S`. It is the mirror image of `MUX`; `outputs` is 2–16.
@@ -184,7 +199,7 @@ stage: box "Stage" @90 {
 }
 ```
 
-Marks can be combined, for example `@90 @flipx`. The rotation is applied first, then the flips, so a flip always mirrors what you see. Ports, arrows and the symbol turn together, while text stays upright. A port on the west side moves to the north side after `@90`. Inside the block body, `rotate 90`, `flipx` and `flipy` mean the same thing.
+Marks can be combined, for example `@90 @flipx`. The rotation is applied first, then the flips, so a flip always mirrors what you see. Rotation and flips move ports to another edge, but ports keep their reading order along it, from top to bottom on a left or right edge and from left to right on a top or bottom edge. After `@flipy`, a `MUX` still lists `A`, `B`, `C` from top to bottom and its `S` moves to the top. After `@90`, a block whose inputs `A`, `B`, `C` ran down the left edge has them running left to right along the top edge. Ports, arrows and the symbol turn together, while text stays upright. A port on the west side moves to the north side after `@90`. Inside the block body, `rotate 90`, `flipx` and `flipy` mean the same thing.
 
 Use this when the layout would otherwise route long wires around a block, or to make a data path run right to left. See [`rotation.cdl`](examples/rotation.cdl).
 
