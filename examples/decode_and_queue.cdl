@@ -1,0 +1,36 @@
+version 1
+
+diagram "Decode, Route and Queue" {
+    direction LR
+
+    input opcode[2], data[16], route[2], push, pop, clk, requests[4]
+    output unit_select[4], grant_index[2], grant_valid, head[16], full, empty
+    output lane0[16], lane1[16], lane2[16], lane3[16]
+
+    unit_decoder: DECODER(width=2)
+    lane_router: DEMUX(width=16, outputs=4)
+    input_queue: FIFO(width=16, depth=8)
+    arbiter_encoder: ENCODER(width=4)
+
+    opcode -> unit_decoder.A
+    unit_decoder.Y -> unit_select
+
+    data -> lane_router.A
+    route -> lane_router.S
+    lane_router.Y0 -> lane0
+    lane_router.Y1 -> lane1
+    lane_router.Y2 -> lane2
+    lane_router.Y3 -> lane3
+
+    data -> input_queue.DIN
+    push -> input_queue.PUSH
+    pop -> input_queue.POP
+    clk -> input_queue.CLK
+    input_queue.DOUT -> head
+    input_queue.FULL -> full
+    input_queue.EMPTY -> empty
+
+    requests -> arbiter_encoder.A
+    arbiter_encoder.Y -> grant_index
+    arbiter_encoder.VALID -> grant_valid
+}
