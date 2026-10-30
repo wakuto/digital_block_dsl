@@ -1,0 +1,32 @@
+version 1
+
+diagram "Register File Ports" {
+    direction LR
+    layout feedback
+
+    input clk, rs1[5], rs2[5], rd[5], wdata[64], we
+    output a[64], b[64]
+
+    // A 2R1W register file as a built-in; read data leaves through the bottom.
+    regs: REGFILE(width=64, addr_width=5, read_ports=2, write_ports=1) {
+        label "Integer Register File"
+        out RDATA0@south, RDATA1@south
+        in CLK@north
+    }
+    // The same port arrangement on a custom box; names on one side no longer overlap.
+    bank: box "Read Port Bank" {
+        in RDATA0[64]@south, RDATA1[64]@south, RADDR0[5]@south, RADDR1[5]@south
+        out A[64], B[64]
+    }
+
+    clk -> regs.CLK
+    rs1 -> regs.RADDR0, bank.RADDR0
+    rs2 -> regs.RADDR1, bank.RADDR1
+    rd -> regs.WADDR0
+    wdata -> regs.WDATA0
+    we -> regs.WE0
+    regs.RDATA0 -> bank.RDATA0
+    regs.RDATA1 -> bank.RDATA1
+    bank.A -> a
+    bank.B -> b
+}

@@ -5,11 +5,11 @@ The objective is a *readable microarchitecture block diagram*, not synthesizable
 ## Make changes safely
 
 1. Inspect `README.md`, `examples/` and `src/parser.ts`. Do not invent syntax that the parser does not accept.
-2. Use `box "Name"` for arbitrary microarchitecture components. Give each block a unique identifier and declare its ports explicitly. Use builtins (ADD/SUB/SHIFT/SHL/SHR/SAR/MUX/DFF/ALU/CMP/SRAM) only when their pin names apply.
+2. Use `box "Name"` for arbitrary microarchitecture components. Give each block a unique identifier and declare its ports explicitly. Use builtins (ADD/SUB/SHIFT/SHL/SHR/SAR/MUX/DFF/ALU/CMP/SRAM/REGFILE) only when their pin names apply.
 3. Use `A[32]` for width 32, not `A[31:0]`. Unspecified width is legal, but prefer explicit widths where known.
 4. Use `bus[msb:lsb]` for slicing (inclusive, zero-based), `bus[bit]` for one bit, and `{high, low}` for concatenation. The leftmost concatenation element contributes the most-significant bits. Example: `{hi[7:0], lo[7:0]} -> dst[15:0]`. Slice only explicitly sized ports. For shift symbols use `SHL(width=32)` / `SHR(width=32)` / `SAR(width=32)` with input `A` and shift amount `B` (default 5 bits at width 32).
 5. `source -> sink1, sink2` merges sinks into one net. Avoid multiple drivers. Don't represent logic functionality beyond components and wires.
-6. Keep the default layout unconstrained. Add `@north` or `@south` only to improve readability (e.g. a clock/select input). Select `layout feedback` if there are cycles.
+6. Keep the default layout unconstrained. Add `@north` or `@south` only to improve readability (e.g. a clock/select input). Select `layout feedback` if there are cycles. When backward wires reorder pipeline stages, pin the stages with `rank N: block, ...` and frame them with `group "Label": block, ...`; do not hide the backward wires to get the order.
 7. Prefer small meaningful displayed names. Use `label "Text"` for a customized builtin label. Use `net` to label important buses only; excessive label use harms readability.
 8. Always run `npm run cdiag -- check examples/your_diagram.cdl` before export.
 9. Use `npm run cdiag -- render examples/your_diagram.cdl -o build/your_diagram.svg` to generate the final SVG with Netlist2SVG. Use `bundle` only when a reusable JSON + Skin pair is needed.
@@ -24,4 +24,4 @@ The objective is a *readable microarchitecture block diagram*, not synthesizable
 - Do not claim that custom Skin output was confirmed by Netlist2SVG without actually running the binary and inspecting the final SVG.
 
 - Use `box "Issue Scheduler" { ... }` when a scheduler is needed; it is not a built-in primitive.
-- MUX is a tapered trapezoid (select defaults south); ALU is a left-notched polygon (OP defaults north); SRAM has no inner grid lines.
+- MUX is a tapered trapezoid (select defaults south; `S=0` selects `A`, the upper input); ALU is a left-notched polygon (OP defaults north); SRAM has no inner grid lines.

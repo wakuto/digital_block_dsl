@@ -1,0 +1,107 @@
+version 1
+
+diagram "Five-Stage Pipeline with Redirect" {
+    direction LR
+    layout feedback
+
+    input clk
+
+    // IF
+    pc: DFF(width=32) { label "PC" in CLK@south }
+    next_pc: MUX(width=32)
+    pc_inc: ADD(width=32)
+    imem: box "Instruction Memory" {
+        in ADDR[32]
+        out INSTR[32]
+    }
+    if_id: box "IF/ID" {
+        in PC_IN[32], INSTR_IN[32], STALL@north
+        out PC[32], INSTR[32]
+    }
+
+    // ID
+    decode: box "Decoder" {
+        in INSTR[32]
+        out RS1[5], RS2[5], RD[5], IMM[32]
+    }
+    regfile: box "Register File" {
+        in RADDR0[5], RADDR1[5], WADDR[5]@south, WDATA[32]@south
+        out RDATA0[32], RDATA1[32]
+    }
+    hazard: box "Hazard Unit" {
+        in RS1[5], RS2[5], EX_RD[5]
+        out STALL
+    }
+    id_ex: box "ID/EX" {
+        in PC_IN[32], A_IN[32], B_IN[32], IMM_IN[32], RD_IN[5]
+        out PC[32], A[32], B[32], IMM[32], RD[5]
+    }
+
+    // EX
+    alu: ALU(width=32, op_width=4)
+    branch: box "Branch Unit" {
+        in PC[32], IMM[32], A[32], B[32]
+        out TAKEN, TARGET[32]
+    }
+    ex_mem: box "EX/MEM" {
+        in RESULT_IN[32], STORE_IN[32], RD_IN[5]
+        out RESULT[32], STORE[32], RD[5]
+    }
+
+    // MEM
+    dmem: SRAM(width=32, addr_width=32) { label "Data Memory" }
+    mem_wb: box "MEM/WB" {
+        in DATA_IN[32], RD_IN[5]
+        out DATA[32], RD[5]
+    }
+
+    clk -> pc.CLK, dmem.CLK
+    pc.Q -> pc_inc.A, imem.ADDR, if_id.PC_IN
+    pc_inc.Y -> next_pc.A
+    next_pc.Y -> pc.D
+    imem.INSTR -> if_id.INSTR_IN
+
+    if_id.INSTR -> decode.INSTR
+    if_id.PC -> id_ex.PC_IN
+    decode.RS1 -> regfile.RADDR0, hazard.RS1
+    decode.RS2 -> regfile.RADDR1, hazard.RS2
+    decode.RD -> id_ex.RD_IN
+    decode.IMM -> id_ex.IMM_IN
+    regfile.RDATA0 -> id_ex.A_IN
+    regfile.RDATA1 -> id_ex.B_IN
+
+    id_ex.A -> alu.A, branch.A
+    id_ex.B -> alu.B, branch.B, ex_mem.STORE_IN
+    id_ex.PC -> branch.PC
+    id_ex.IMM -> branch.IMM
+    id_ex.RD -> ex_mem.RD_IN, hazard.EX_RD
+    alu.Y -> ex_mem.RESULT_IN
+
+    ex_mem.RESULT -> dmem.ADDR
+    ex_mem.STORE -> dmem.WDATA
+    ex_mem.RD -> mem_wb.RD_IN
+    dmem.RDATA -> mem_wb.DATA_IN
+
+    // Pin pipeline stages to columns so the backward paths cannot reorder them.
+    rank 0: pc, next_pc, pc_inc, imem
+    rank 1: if_id
+    rank 2: decode, regfile, hazard
+    rank 3: id_ex
+    rank 4: alu, branch
+    rank 5: ex_mem
+    rank 6: dmem
+    rank 7: mem_wb
+
+    // Frame each stage; with a rank per stage the frames do not overlap.
+    group "IF": pc, next_pc, pc_inc, imem
+    group "ID": decode, regfile, hazard
+    group "EX": alu, branch
+    group "MEM": dmem
+
+    // Backward paths: redirect (EX -> IF), stall (ID -> IF) and write-back (WB -> ID)
+    branch.TARGET -> next_pc.B
+    branch.TAKEN -> next_pc.S
+    hazard.STALL -> if_id.STALL
+    mem_wb.DATA -> regfile.WDATA
+    mem_wb.RD -> regfile.WADDR
+}

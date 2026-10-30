@@ -75,6 +75,8 @@ With Docker, put `docker compose run --rm typescript` in front of each command. 
 | [`dma_engine.cdl`](examples/dma_engine.cdl) | A DMA controller and memory interface |
 | [`decode_and_queue.cdl`](examples/decode_and_queue.cdl) | Decoder, demux, FIFO and encoder |
 | [`rotation.cdl`](examples/rotation.cdl) | Rotated and flipped blocks |
+| [`pipeline_ranks.cdl`](examples/pipeline_ranks.cdl) | A five-stage pipeline kept in order with `rank` and `group` ([rendered](examples/rendered/pipeline_ranks.svg)) |
+| [`register_file.cdl`](examples/register_file.cdl) | A 2R1W `REGFILE` and south-side port names ([rendered](examples/rendered/register_file.svg)) |
 | [`bit_manipulation.cdl`](examples/bit_manipulation.cdl) | Concatenation, slices and shifts |
 
 Rendered SVGs are in [`examples/rendered/`](examples/rendered).
@@ -133,8 +135,13 @@ Built-in blocks come with fixed port names and a standard symbol. Every block po
 | `DFF` | `D[n]`, `CLK[1]` | `Q[n]` | `width` |
 | `FIFO` | `DIN[n]`, `PUSH[1]`, `POP[1]`, `CLK[1]` | `DOUT[n]`, `FULL[1]`, `EMPTY[1]` | `width`, `depth` (default 8) |
 | `SRAM` | `ADDR[addr_width]`, `WDATA[n]`, `WE[1]`, `CLK[1]` | `RDATA[n]` | `width`, `addr_width` |
+| `REGFILE` | `RADDRi[addr_width]`, `WADDRj[addr_width]`, `WDATAj[n]`, `WEj[1]`, `CLK[1]` | `RDATAi[n]` | `width`, `addr_width` (default 5), `read_ports` (default 2), `write_ports` (default 1) |
 
 Defaults: `width` = 32, `addr_width` = 12, `op_width` = 4, and `shamt_width` = `ceil(log2(width))` (at least 1).
+
+`SRAM` is a single-port (1RW) memory. For a multi-ported array use `REGFILE`: `i` counts read ports from 0 to `read_ports - 1` and `j` counts write ports, so `REGFILE(width=64, read_ports=2, write_ports=1)` has `RADDR0`, `RADDR1`, `RDATA0`, `RDATA1`, `WADDR0`, `WDATA0` and `WE0`.
+
+For `MUX`, `S=0` selects `A`, `S=1` selects `B`, and `A` is drawn as the upper input.
 
 ### MUX with more than two inputs
 
@@ -245,6 +252,25 @@ Optional settings go inside the diagram body, for example `layout feedback`.
 - Layout settings guide the renderer. They do not guarantee short wires in every circuit. Look at the result, and if long wires remain, rearrange the blocks or try another layout.
 - `netlabels` is kept in the intermediate representation. Net labels are not yet placed on the final SVG.
 
+## Keep stages in order
+
+Automatic placement follows the direction of the wires. A wire that goes back by two or more stages, such as a branch redirect from EX to IF or a stall from a hazard unit, can make the layout put a later stage on the left; `layout feedback` does not prevent this. Give blocks a rank to fix the order:
+
+```text
+rank 0: pc, next_pc, imem
+rank 1: if_id
+rank 2: decode, regfile, hazard
+
+group "IF": pc, next_pc, imem
+group "ID": decode, regfile, hazard
+```
+
+`rank N: block, ...` places those blocks in column band `N`. Bands follow `direction`: with `LR`, every rank-0 block is to the left of every rank-1 block. A block in a band may still use several columns inside it, and blocks without a rank are placed freely. A rank can also be written inside a block body as `rank 2`. Ranks apply to blocks only, and a block may not have two different ranks.
+
+`group "Label": block, ...` draws a dashed, labelled frame around the listed blocks after layout. The frame is the bounding box of its members; it does not move blocks. Give the members of a group the same rank or consecutive ranks, or the frame may enclose other blocks. Group frames are drawn by `render` and `createRenderer`; `bundle` output has no frames.
+
+`rank` and `group` are statements only when followed by a number or a string, so blocks and ports may still be named `rank` or `group`.
+
 ## Command line
 
 ```sh
@@ -319,6 +345,12 @@ Regenerate the README figure after changing the example or the renderer:
 
 ```sh
 npm run cdiag -- render examples/simple_riscv_datapath.cdl -o examples/rendered/simple_riscv_datapath.svg
+```
+
+Run the tests:
+
+```sh
+npm test
 ```
 
 Out of scope for now: hierarchical modules, constants, HDL expressions, bidirectional bundles, manual routing and interactive editing.

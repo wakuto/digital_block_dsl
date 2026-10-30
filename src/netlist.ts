@@ -24,7 +24,7 @@ export function yosysJson(diagram: Diagram, customSkin = false): Record<string,u
   const cells:Record<string,unknown>={};
   for(const [id,b]of Object.entries(diagram.blocks)){const connections:Record<string,number[]>={},port_directions:Record<string,string>={};for(const [pn,p]of Object.entries(b.ports)){connections[pn]=vectors[`${id}.${pn}`];port_directions[pn]=p.direction;}
     const cellType=b.type==="CMP"&&b.params.op==="ne"?"$ne":SKIN_TYPES[b.type]??(b.type==="box"?b.label:b.type);
-    const cell:{[key:string]:unknown}={hide_name:0,type:customSkin?`CDL__${id}`:cellType,parameters:{},attributes:{name:b.label},port_directions,connections};
+    const cell:{[key:string]:unknown}={hide_name:0,type:customSkin?`CDL__${id}`:cellType,parameters:{},attributes:{name:b.label,...(b.rank===null?{}:{"org.eclipse.elk.partitioning.partition":b.rank})},port_directions,connections};
     if(!customSkin&&["MUX","DFF"].includes(b.type))(cell.parameters as Record<string,number>).WIDTH=Number(b.params.width??32);cells[id]=cell;
   }
   return {creator:"cdiag 0.4",modules:{top:{attributes:{top:1},ports,cells,netnames}}};

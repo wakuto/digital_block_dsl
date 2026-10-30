@@ -1,4 +1,4 @@
-import { DiagramError, signalToString, type Block, type Diagram, type Direction, type Net, type Port, type SignalRef, type Wiring } from "./model.js";
+import { DiagramError, signalToString, type Block, type Diagram, type Direction, type Group, type Net, type Port, type SignalRef, type Wiring } from "./model.js";
 import { validatePreset } from "./symbols.js";
 
 interface Tok { value: string; kind: "word" | "int" | "string" | "punct"; line: number; column: number }
@@ -138,7 +138,8 @@ function resolve(d: Diagram): void {
 export function parse(source: string): Diagram {
   const r = new Reader(source); const version = r.word(); if(version.value!=="version")r.fail("expected version declaration"); const v=r.integer(); if(v!==1)throw new DiagramError("E002","only version 1 is supported",version.line);
   const key=r.word();if(key.value!=="diagram")r.fail("expected diagram declaration");const title=r.string();r.need("{");
-  const d:Diagram={title,direction:"LR",theme:"light",layout:"balanced",netlabels:true,ports:{},blocks:{},nets:[],wirings:[]};
+  const d:Diagram={title,direction:"LR",theme:"light",layout:"balanced",netlabels:true,ports:{},blocks:{},nets:[],wirings:[],groups:[]};const ranks:{id:string,rank:number,line:number}[]=[];
+  const ids=()=>{const out=[r.word()];while(r.take(","))out.push(r.word());return out;};
   while(!r.take("}")){
     if(r.is("<eof>"))r.fail("unterminated diagram");const t=r.t;
     if(r.is("direction")){r.pop();const x=r.word();if(!["LR","RL","TB","BT"].includes(x.value))r.fail("invalid direction");d.direction=x.value as Diagram["direction"];continue;}
@@ -146,29 +147,36 @@ export function parse(source: string): Diagram {
     if(r.is("layout")){r.pop();const x=r.word();if(!["balanced","compact","feedback"].includes(x.value))r.fail("invalid layout");d.layout=x.value as Diagram["layout"];continue;}
     if(r.is("netlabels")){r.pop();const x=r.word();if(x.value!=="on"&&x.value!=="off")r.fail("invalid netlabels setting");d.netlabels=x.value==="on";continue;}
     if(r.is("input")||r.is("output")){const dir=r.pop().value as Direction, declared=r.ports(dir);for(const [pn,p]of Object.entries(declared)){if(d.ports[pn]||d.blocks[pn])throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(pn)}`,p.line);d.ports[pn]=p;}continue;}
+    if(r.is("rank")&&r.ts[r.pos+1].kind==="int"){r.pop();const n=r.integer();r.need(":");for(const id of ids())ranks.push({id:id.value,rank:n,line:id.line});continue;}
+    if(r.is("group")&&r.ts[r.pos+1].kind==="string"){r.pop();const label=r.string();r.need(":");d.groups.push({label,members:ids().map(x=>x.value),line:t.line});continue;}
     if(r.is("net")){
       r.pop();const name=r.word();let width:number|null=null;if(r.take("[")){width=r.integer();r.need("]");if(width===0)throw new DiagramError("E201",`net ${name.value} width must be positive`,t.line);}r.need("=");const sources=r.signalExpr();r.need("->");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:name.value,width,line:t.line});continue;
     }
-    if(r.is("{")){const sources=r.signalExpr();if(!r.take("->"))r.fail("expected '->' after concatenation");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:null,width:null,line:t.line});continue;}
+    const connection=()=>{const start=r.t;const sources=r.signalExpr();if(!r.take("->"))r.fail("expected ':' for block declaration or '->' for connection");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:null,width:null,line:start.line});};
+    if(r.is("{")){connection();continue;}
     if(t.kind!=="word")r.fail("expected declaration");const name=r.word();
     if(r.take(":")){
       if(name.value in d.blocks||name.value in d.ports)throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(name.value)}`,name.line);
       let type:string,label:string,params:Record<string,string|number>={};
       if(r.is("box")){r.pop();type="box";label=r.string();}else{type=r.word().value;label=type;if(r.is("("))params=r.params();}
       const preset=validatePreset(type,params,name.line), ports=preset??{};let style:string|null=null;const orient={rotation:0 as Block["rotation"],flipX:false,flipY:false};r.orientation(orient);
-      if(r.take("{")){while(!r.take("}")){if(r.is("style")){r.pop();style=r.word().value;if(!["logic","storage","control","neutral","accent"].includes(style))r.fail("invalid style");}
+      const next=r.ts[r.pos+1],after=r.ts[r.pos+2];
+      if(r.is("{")&&(next.value==="}"||(next.kind==="word"&&after.kind!=="punct"))&&r.take("{")){while(!r.take("}")){if(r.is("style")){r.pop();style=r.word().value;if(!["logic","storage","control","neutral","accent"].includes(style))r.fail("invalid style");}
           else if(r.is("label")){r.pop();label=r.string();}
+          else if(r.is("rank")){const k=r.pop();ranks.push({id:name.value,rank:r.integer(),line:k.line});}
           else if(r.is("rotate")){r.pop();const deg=r.integer();if(![0,90,180,270].includes(deg))r.fail("rotate must be 0, 90, 180 or 270");orient.rotation=deg as Block["rotation"];}
           else if(r.is("flipx")){r.pop();orient.flipX=true;}
           else if(r.is("flipy")){r.pop();orient.flipY=true;}
           else if(r.is("in")||r.is("out")){const local=r.pop(), dir:Direction=local.value==="in"?"input":"output", extras=r.ports(dir);for(const [pn,p]of Object.entries(extras)){if(ports[pn]){const old=ports[pn];if(!preset||old.direction!==p.direction||(p.width!==null&&p.width!==old.width))throw new DiagramError("E102",`incompatible duplicate port ${name.value}.${pn}`,p.line);if(p.side)old.side=p.side;}else{if(preset)throw new DiagramError("E102",`cannot add port ${JSON.stringify(pn)} to builtin ${type}`,p.line);ports[pn]=p;}}}
           else r.fail("expected block body declaration");}}
       if(!Object.keys(ports).length)throw new DiagramError("E203",`${name.value} has no ports; declare them using a block body`,name.line);
-      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,...orient};continue;
+      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,rank:null,...orient};continue;
     }
-    r.pos--;const start=r.t;const sources=r.signalExpr();if(!r.take("->"))r.fail("expected ':' for block declaration or '->' for connection");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:null,width:null,line:start.line});
+    r.pos--;connection();
   }
   if(!r.is("<eof>"))r.fail("unexpected content after diagram");
   for(const p of Object.values(d.ports))if(d.blocks[p.name])throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(p.name)}`,p.line);
+  for(const x of ranks){const b=d.blocks[x.id];if(!b)throw new DiagramError("E101",d.ports[x.id]?`rank applies to blocks only; diagram port ${JSON.stringify(x.id)} is placed automatically`:`unknown block ${JSON.stringify(x.id)} in rank`,x.line);if(b.rank!==null&&b.rank!==x.rank)throw new DiagramError("E106",`conflicting ranks ${b.rank} and ${x.rank} for ${JSON.stringify(x.id)}`,x.line);b.rank=x.rank;}
+  for(const g of d.groups){const seen=new Set<string>();for(const m of g.members){if(!d.blocks[m])throw new DiagramError("E101",`unknown block ${JSON.stringify(m)} in group ${JSON.stringify(g.label)}`,g.line);if(seen.has(m))throw new DiagramError("E102",`duplicate member ${JSON.stringify(m)} in group ${JSON.stringify(g.label)}`,g.line);seen.add(m);}}
   resolve(d);return d;
 }
