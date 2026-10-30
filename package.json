@@ -20,7 +20,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepack": "npm run build",
-    "cdiag": "node dist/cli.js"
+    "cdiag": "node dist/cli.js",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "netlist2svg": "1.2.0"
