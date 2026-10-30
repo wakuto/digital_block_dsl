@@ -11,12 +11,12 @@ const PRESETS={compact:{layers:24,nodes:20,edge:12},balanced:{layers:45,nodes:38
 type Palette=typeof PALETTES.light;
 const esc=(v:unknown)=>String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&apos;");
 const tag=(name:string,attrs:Record<string,unknown>={},content?:string)=>content===undefined?`<${name}${Object.entries(attrs).map(([k,v])=>` ${k}="${esc(v)}"`).join("")}/>`:`<${name}${Object.entries(attrs).map(([k,v])=>` ${k}="${esc(v)}"`).join("")}>${esc(content)}</${name}>`;
-const trap=new Set(["MUX","DEMUX"]);
+const trap=new Set(["MUX","DEMUX"]),TRAP_INSET=30;/* fixed slope: the slanted edges keep their angle however tall the symbol grows */
 const compact=new Set(["ADD","SUB","SHIFT","SHL","SHR","SAR","CMP","AND","OR","XOR","NOT"]);
 function blockSvg(b:Block,pal:Palette):string{
  const sides:Record<Side,Port[]>={west:[],east:[],north:[],south:[]};for(const p of Object.values(b.ports))sides[p.side??(p.direction==="input"?"west":"east")].push(p);
  const labelLines=b.label.split("\n"),len=(s:Port[])=>s.reduce((n,p)=>Math.max(n,p.name.length),0),maxSide=Math.max(sides.west.length,sides.east.length);
- let w:number,h:number;if(["AND","OR","NOT"].includes(b.type)){w=76;h=62;}
+ let w:number,h:number;if(["AND","OR","NOT"].includes(b.type)){w=76;h=Math.max(62,20*maxSide+14);}
  else if(compact.has(b.type)){w=Math.max(66,42+b.label.length*7.5,30+13*Math.max(sides.north.length,sides.south.length));h=Math.max(50,19*maxSide+14);}
  else if(trap.has(b.type)){w=29;h=Math.max(78,24*maxSide+30);}
  else if(b.type==="ALU"){w=Math.max(110,40+b.label.length*8);h=Math.max(100,32*maxSide+40);}
@@ -31,8 +31,8 @@ function blockSvg(b:Block,pal:Palette):string{
  const T=(x:number,y:number):[number,number]=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]],matrix=`matrix(${m.join(",")})`;
  const rotSide=(sd:Side):Side=>{const o:Side[]=["north","east","south","west"];const q=o[(o.indexOf(sd)+rot/90)%4];return fx&&(q==="west"||q==="east")?(q==="west"?"east":"west"):fy&&(q==="north"||q==="south")?(q==="north"?"south":"north"):q;};
  const ink=pal.ink,fill=pal[defaultStyle(b) as keyof Palette]??pal.neutral,base={stroke:ink,"stroke-width":1.6,fill,class:"symbol $cell_id"};let shape="";
- if(b.type==="MUX"){const n=.23*h;shape=tag("path",{...base,d:`M 0,0 L ${w},${((h-n)/2).toFixed(2)} L ${w},${((h+n)/2).toFixed(2)} L 0,${h} Z`});}
- else if(b.type==="DEMUX"){const n=.23*h;shape=tag("path",{...base,d:`M 0,${((h-n)/2).toFixed(2)} L ${w},0 L ${w},${h} L 0,${((h+n)/2).toFixed(2)} Z`});}
+ if(b.type==="MUX"){const n=h-2*TRAP_INSET;shape=tag("path",{...base,d:`M 0,0 L ${w},${((h-n)/2).toFixed(2)} L ${w},${((h+n)/2).toFixed(2)} L 0,${h} Z`});}
+ else if(b.type==="DEMUX"){const n=h-2*TRAP_INSET;shape=tag("path",{...base,d:`M 0,${((h-n)/2).toFixed(2)} L ${w},0 L ${w},${h} L 0,${((h+n)/2).toFixed(2)} Z`});}
  else if(b.type==="ALU")shape=tag("path",{...base,d:`M 0,0 L ${w},${(.22*h).toFixed(2)} L ${w},${(.78*h).toFixed(2)} L 0,${h} L 0,${(.65*h).toFixed(2)} L ${(.18*w).toFixed(2)},${(.5*h).toFixed(2)} L 0,${(.35*h).toFixed(2)} Z`});
  else if(b.type==="AND")shape=tag("path",{...base,d:`M 0,0 L ${(.48*w).toFixed(2)},0 A ${(w*.52).toFixed(2)} ${(h/2).toFixed(2)} 0 0 1 ${(.48*w).toFixed(2)} ${h} L 0,${h} Z`});
  else if(b.type==="OR")shape=tag("path",{...base,d:`M 0,0 Q ${(w*.56).toFixed(2)},0 ${w},${(h/2).toFixed(2)} Q ${(w*.56).toFixed(2)},${h} 0,${h} Q ${(w*.23).toFixed(2)},${(h/2).toFixed(2)} 0,0 Z`});
@@ -44,15 +44,22 @@ function blockSvg(b:Block,pal:Palette):string{
  const title=trap.has(b.type)?"":b.type==="FIFO"&&b.label==="FIFO"?`FIFO (${b.params.depth??8})`:b.label==="box"?b.id:b.label===b.type?(operators[b.type]??(["AND","OR","NOT"].includes(b.type)?"":b.label)):b.label,tx=b.type==="MUX"?w*.48:b.type==="DEMUX"?w*.52:b.type==="ALU"?w*.6:w/2,ty=compact.has(b.type)||trap.has(b.type)||b.type==="ALU"?h/2+4:21,fs=operators[b.type]?24:b.type==="ALU"?13:compact.has(b.type)||trap.has(b.type)?11:13;
  let tX=tx,tY=ty;if(xf){if(ty===21){tX=W/2;tY=(["west","east","north","south"] as Side[]).some(sd=>sides[sd].length&&rotSide(sd)==="north")?40:21;}else[tX,tY]=T(tx,ty);}
  let out=`<g s:type="cdiag_${esc(b.id)}" transform="translate(30,20)" s:width="${W}" s:height="${H}" id="cell_${esc(b.id)}"><s:alias val="CDL__${esc(b.id)}"/>${xf?`<g transform="${matrix}">${shape}</g>`:shape}${title?tag("text",{x:tX.toFixed(2),y:tY.toFixed(2),"text-anchor":"middle","font-size":fs,"font-weight":"bold",fill:ink,stroke:"none"},title):""}`;
- for(const side of ["west","east","north","south"] as Side[]){const ps=sides[side];ps.forEach((p,i)=>{let x:number,y:number,tx:number,ty:number,anchor:string;
-   if(side==="west"||side==="east"){y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):["AND","OR"].includes(b.type)&&side==="west"&&ps.length===2?h*(i===0?.32:.68):["AND","OR","NOT"].includes(b.type)?h*.5:h*(i+1)/(ps.length+1);x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(y-h*.5)/(h*.15)):b.type==="OR"&&side==="west"&&ps.length===2?w*.1:side==="west"?0:w;if(b.type==="MUX"&&side==="east")y=h*.5;tx=x+(side==="west"?12:-12);ty=y+3;anchor=side==="west"?"start":"end";}
-   else{x=w*(i+1)/(ps.length+1);y=b.type==="MUX"?h*(side==="north"?.385*x/w:1-.385*x/w):b.type==="DEMUX"?h*(side==="north"?.385*(1-x/w):.615+.385*x/w):b.type==="ALU"?h*(side==="north"?.22*x/w:1-.22*x/w):side==="north"?0:h;tx=x;ty=y+(side==="north"?(compact.has(b.type)||trap.has(b.type)||b.type==="ALU"?17:39):(compact.has(b.type)?-10:trap.has(b.type)||b.type==="ALU"?-12:-16));anchor="middle";}
+ for(const side of ["west","east","north","south"] as Side[]){const ps=sides[side],rows:{p:Port;x:number;y:number;tx:number;ty:number;anchor:string}[]=[];ps.forEach((p,i)=>{let x:number,y:number,tx:number,ty:number,anchor:string;
+   if(side==="west"||side==="east"){y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):["AND","OR"].includes(b.type)&&side==="west"&&ps.length===2?h*(i===0?.32:.68):b.type==="NOT"?h*.5:h*(i+1)/(ps.length+1);x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(y-h*.5)/(h*.15)):b.type==="OR"&&side==="west"?w*.46*(y/h)*(1-y/h):side==="west"?0:w;if(b.type==="MUX"&&side==="east")y=h*.5;tx=x+(side==="west"?12:-12);ty=y+3;anchor=side==="west"?"start":"end";}
+   else{x=w*(i+1)/(ps.length+1);y=b.type==="MUX"?(side==="north"?TRAP_INSET*x/w:h-TRAP_INSET*x/w):b.type==="DEMUX"?(side==="north"?TRAP_INSET*(1-x/w):h-TRAP_INSET*(1-x/w)):b.type==="ALU"?h*(side==="north"?.22*x/w:1-.22*x/w):side==="north"?0:h;tx=x;ty=y+(side==="north"?(compact.has(b.type)||trap.has(b.type)||b.type==="ALU"?17:39):(compact.has(b.type)?-10:trap.has(b.type)||b.type==="ALU"?-12:-16));anchor="middle";}
    const sd=xf?rotSide(side):side;
    if(xf){[x,y]=T(x,y);tx=sd==="west"?x+12:sd==="east"?x-12:x;ty=sd==="west"||sd==="east"?y+3:sd==="north"?y+17:y-12;anchor=sd==="west"?"start":sd==="east"?"end":"middle";}
+   rows.push({p,x,y,tx,ty,anchor});
+  });
+  const sd=xf?rotSide(side):side;
+  /* Rotating or flipping moves a port group to another edge but keeps its reading order (top to bottom, left to right): undo any reversal. */
+  const n=rows.length;if(n>1&&((sd==="west"||sd==="east")?rows[0].y>rows[n-1].y:rows[0].x>rows[n-1].x)){const pos=rows.map(r=>({x:r.x,y:r.y,tx:r.tx,ty:r.ty})).reverse();rows.forEach((r,k)=>Object.assign(r,pos[k]));}
+  for(const {p,x,y,tx,ty,anchor} of rows){
    const label=["AND","OR","NOT","MUX","DEMUX"].includes(b.type)?"":p.name;
    const [ix,iy]=sd==="west"?[1,0]:sd==="east"?[-1,0]:sd==="north"?[0,1]:[0,-1],arrow=(tipX:number,tipY:number,baseX:number,baseY:number)=>tag("path",{d:`M ${tipX.toFixed(2)},${tipY.toFixed(2)} L ${(baseX-iy*3.5).toFixed(2)},${(baseY+ix*3.5).toFixed(2)} L ${(baseX+iy*3.5).toFixed(2)},${(baseY-ix*3.5).toFixed(2)} Z`,fill:ink,stroke:"none"});
    out+=(p.direction==="input"?arrow(x+ix*7,y+iy*7,x,y):arrow(x,y,x+ix*7,y+iy*7))+`<g s:x="${x.toFixed(2)}" s:y="${y.toFixed(2)}" s:pid="${esc(p.name)}"/>${label?`<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="${anchor}" font-size="${compact.has(b.type)?9:10}" fill="${ink}" stroke="none">${esc(label)}</text>`:""}`;
-  });}
+  }
+ }
  return out+"</g>";
 }
 

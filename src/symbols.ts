@@ -11,7 +11,12 @@ export function builtinPorts(kind: string, params: Record<string, ParamValue>, l
   const width = kind === "DECODER" || kind === "ENCODER" ? 1 : positive(kind, "width", params, 32), addr = positive(kind, "addr_width", params, kind === "REGFILE" ? 5 : 12), op = positive(kind, "op_width", params, 4);
   const shamt = positive(kind, "shamt_width", params, Math.max(1, Math.ceil(Math.log2(width))));
   let desc: Descriptor[] | null = null;
-  if (["ADD", "SUB", "AND", "OR", "XOR"].includes(kind)) desc = [["A", "input", width], ["B", "input", width], ["Y", "output", width]];
+  if (kind === "AND" || kind === "OR") {
+    const n = positive(kind, "inputs", params, 2);
+    if (n < 2 || n > 16) throw new Error(`inputs for ${kind} must be between 2 and 16`);
+    desc = [...Array.from({ length: n }, (_, i): Descriptor => [String.fromCharCode(65 + i), "input", width]), ["Y", "output", width]];
+  }
+  else if (["ADD", "SUB", "XOR"].includes(kind)) desc = [["A", "input", width], ["B", "input", width], ["Y", "output", width]];
   else if (["SHIFT", "SHL", "SHR", "SAR"].includes(kind)) desc = [["A", "input", width], ["B", "input", shamt], ["Y", "output", width]];
   else if (kind === "NOT") desc = [["A", "input", width], ["Y", "output", width]];
   else if (kind === "MUX") {
@@ -53,7 +58,7 @@ export function builtinPorts(kind: string, params: Record<string, ParamValue>, l
     for (let i = 0; i < reads; i++) desc.push([`RDATA${i}`, "output", width]);
   }
   if (!desc) return null;
-  const known = new Set(["width", "addr_width", "op_width", "shamt_width", "op", "inputs", "outputs", "depth", "read_ports", "write_ports"]), used = new Set(["width", ...(kind === "SRAM" ? ["addr_width"] : []), ...(kind === "REGFILE" ? ["addr_width", "read_ports", "write_ports"] : []), ...(kind === "ALU" ? ["op_width"] : []), ...(kind === "CMP" ? ["op"] : []), ...(kind === "MUX" ? ["inputs"] : []), ...(kind === "DEMUX" ? ["outputs"] : []), ...(kind === "FIFO" ? ["depth"] : []), ...(["SHIFT", "SHL", "SHR", "SAR"].includes(kind) ? ["shamt_width"] : [])]);
+  const known = new Set(["width", "addr_width", "op_width", "shamt_width", "op", "inputs", "outputs", "depth", "read_ports", "write_ports"]), used = new Set(["width", ...(kind === "SRAM" ? ["addr_width"] : []), ...(kind === "REGFILE" ? ["addr_width", "read_ports", "write_ports"] : []), ...(kind === "ALU" ? ["op_width"] : []), ...(kind === "CMP" ? ["op"] : []), ...(["MUX", "AND", "OR"].includes(kind) ? ["inputs"] : []), ...(kind === "DEMUX" ? ["outputs"] : []), ...(kind === "FIFO" ? ["depth"] : []), ...(["SHIFT", "SHL", "SHR", "SAR"].includes(kind) ? ["shamt_width"] : [])]);
   const extra = Object.keys(params).filter(k => !known.has(k)).sort();
   if (extra.length) throw new Error(`unsupported parameters for ${kind}: ${extra.join(", ")}`);
   if (kind === "CMP" && params.op !== undefined && !["eq", "ne"].includes(String(params.op))) throw new Error('op for CMP must be "eq" or "ne"');

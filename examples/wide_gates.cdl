@@ -1,0 +1,20 @@
+version 1
+
+diagram "Wide Gates" {
+    direction LR
+
+    input a, b, c, d
+    output all_set, any_set, pair
+
+    all_ready: AND(width=1, inputs=3)
+    any_request: OR(width=1, inputs=4)
+    both: AND(width=1)
+
+    a -> all_ready.A, any_request.A, both.A
+    b -> all_ready.B, any_request.B, both.B
+    c -> all_ready.C, any_request.C
+    d -> any_request.D
+    all_ready.Y -> all_set
+    any_request.Y -> any_set
+    both.Y -> pair
+}
