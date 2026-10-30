@@ -4,7 +4,7 @@ export type Side = "west" | "east" | "north" | "south";
 export type ParamValue = number | string;
 
 export interface Port { name: string; direction: Direction; width: number | null; side: Side | null; line: number }
-export interface Block { id: string; type: string; label: string; ports: Record<string, Port>; params: Record<string, ParamValue>; line: number; builtin: boolean; style: string | null; rank: number | null }
+export interface Block { id: string; type: string; label: string; ports: Record<string, Port>; params: Record<string, ParamValue>; line: number; builtin: boolean; style: string | null; rotation: 0 | 90 | 180 | 270; flipX: boolean; flipY: boolean; rank: number | null }
 export interface Net { driver: string; sinks: string[]; width: number | null; name: string | null; line: number }
 export interface SignalRef { endpoint: string; msb: number | null; lsb: number | null }
 export interface Wiring { sources: SignalRef[]; sinks: SignalRef[]; name: string | null; width: number | null; line: number }

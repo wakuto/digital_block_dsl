@@ -1,0 +1,36 @@
+version 1
+
+diagram "Rotated and Flipped Blocks" {
+    direction LR
+
+    input din[16], push, pop, clk, sel[2], a[8], b[8], c[8]
+    output dout[16], full, empty, y[8], q[8], z[8], w[8]
+
+    queue: FIFO(width=16, depth=4) @90
+    pick: MUX(width=8) @270
+    sum: ADD(width=8) @180
+    stage: box "Stage" @90 {
+        in IN[8]
+        out OUT[8]
+    }
+    back: ADD(width=8) @flipx
+    up: MUX(width=8) @flipy
+
+    din -> queue.DIN
+    push -> queue.PUSH
+    pop -> queue.POP
+    clk -> queue.CLK
+    queue.DOUT -> dout
+    queue.FULL -> full
+    queue.EMPTY -> empty
+
+    a -> pick.A, sum.A, back.A, up.A
+    b -> pick.B, sum.B, back.B
+    sel[1] -> pick.S, up.S
+    c -> up.B
+    sum.Y -> stage.IN
+    stage.OUT -> y
+    pick.Y -> q
+    back.Y -> z
+    up.Y -> w
+}

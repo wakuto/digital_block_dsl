@@ -11,31 +11,47 @@ const PRESETS={compact:{layers:24,nodes:20,edge:12},balanced:{layers:45,nodes:38
 type Palette=typeof PALETTES.light;
 const esc=(v:unknown)=>String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&apos;");
 const tag=(name:string,attrs:Record<string,unknown>={},content?:string)=>content===undefined?`<${name}${Object.entries(attrs).map(([k,v])=>` ${k}="${esc(v)}"`).join("")}/>`:`<${name}${Object.entries(attrs).map(([k,v])=>` ${k}="${esc(v)}"`).join("")}>${esc(content)}</${name}>`;
+const trap=new Set(["MUX","DEMUX"]);
 const compact=new Set(["ADD","SUB","SHIFT","SHL","SHR","SAR","CMP","AND","OR","XOR","NOT"]);
 function blockSvg(b:Block,pal:Palette):string{
  const sides:Record<Side,Port[]>={west:[],east:[],north:[],south:[]};for(const p of Object.values(b.ports))sides[p.side??(p.direction==="input"?"west":"east")].push(p);
  const labelLines=b.label.split("\n"),len=(s:Port[])=>s.reduce((n,p)=>Math.max(n,p.name.length),0),maxSide=Math.max(sides.west.length,sides.east.length);
  let w:number,h:number;if(["AND","OR","NOT"].includes(b.type)){w=76;h=62;}
  else if(compact.has(b.type)){w=Math.max(66,42+b.label.length*7.5,30+13*Math.max(sides.north.length,sides.south.length));h=Math.max(50,19*maxSide+14);}
- else if(b.type==="MUX"){w=29;h=Math.max(78,24*maxSide+30);}
+ else if(trap.has(b.type)){w=29;h=Math.max(78,24*maxSide+30);}
  else if(b.type==="ALU"){w=Math.max(110,40+b.label.length*8);h=Math.max(100,32*maxSide+40);}
  else {w=Math.max(108,18+Math.max(...labelLines.map(x=>x.length))*7.5,42+(len(sides.west)+len(sides.east))*7.2,54+25*Math.max(sides.north.length,sides.south.length),...(["north","south"] as Side[]).map(k=>(sides[k].length+1)*(len(sides[k])*6.2+10)));h=Math.max(70,54+24*maxSide,sides.north.length&&sides.south.length?100:70);}
- w=Math.ceil(w);h=Math.ceil(h);const ink=pal.ink,fill=pal[defaultStyle(b) as keyof Palette]??pal.neutral,base={stroke:ink,"stroke-width":1.6,fill,class:"symbol $cell_id"};let shape="";
+ if(b.type==="FIFO")w=Math.max(w,150);
+ const rot=b.rotation??0,fx=!!b.flipX,fy=!!b.flipY,xf=rot!==0||fx||fy,quarter=rot===90||rot===270,rectType=!compact.has(b.type)&&!trap.has(b.type)&&b.type!=="ALU";
+ if(quarter&&rectType)h=Math.max(h,24+Math.max(...labelLines.map(x=>x.length))*7.5,36*maxSide+30,42+(len(sides.north)+len(sides.south))*7.2);
+ w=Math.ceil(w);h=Math.ceil(h);
+ const W=quarter?h:w,H=quarter?w:h;
+ const m=(rot===90?[0,1,-1,0,h,0]:rot===180?[-1,0,0,-1,w,h]:rot===270?[0,-1,1,0,0,w]:[1,0,0,1,0,0]).slice();
+ if(fx){m[0]=-m[0];m[2]=-m[2];m[4]=W-m[4];}if(fy){m[1]=-m[1];m[3]=-m[3];m[5]=H-m[5];}
+ const T=(x:number,y:number):[number,number]=>[m[0]*x+m[2]*y+m[4],m[1]*x+m[3]*y+m[5]],matrix=`matrix(${m.join(",")})`;
+ const rotSide=(sd:Side):Side=>{const o:Side[]=["north","east","south","west"];const q=o[(o.indexOf(sd)+rot/90)%4];return fx&&(q==="west"||q==="east")?(q==="west"?"east":"west"):fy&&(q==="north"||q==="south")?(q==="north"?"south":"north"):q;};
+ const ink=pal.ink,fill=pal[defaultStyle(b) as keyof Palette]??pal.neutral,base={stroke:ink,"stroke-width":1.6,fill,class:"symbol $cell_id"};let shape="";
  if(b.type==="MUX"){const n=.23*h;shape=tag("path",{...base,d:`M 0,0 L ${w},${((h-n)/2).toFixed(2)} L ${w},${((h+n)/2).toFixed(2)} L 0,${h} Z`});}
+ else if(b.type==="DEMUX"){const n=.23*h;shape=tag("path",{...base,d:`M 0,${((h-n)/2).toFixed(2)} L ${w},0 L ${w},${h} L 0,${((h+n)/2).toFixed(2)} Z`});}
  else if(b.type==="ALU")shape=tag("path",{...base,d:`M 0,0 L ${w},${(.22*h).toFixed(2)} L ${w},${(.78*h).toFixed(2)} L 0,${h} L 0,${(.65*h).toFixed(2)} L ${(.18*w).toFixed(2)},${(.5*h).toFixed(2)} L 0,${(.35*h).toFixed(2)} Z`});
  else if(b.type==="AND")shape=tag("path",{...base,d:`M 0,0 L ${(.48*w).toFixed(2)},0 A ${(w*.52).toFixed(2)} ${(h/2).toFixed(2)} 0 0 1 ${(.48*w).toFixed(2)} ${h} L 0,${h} Z`});
  else if(b.type==="OR")shape=tag("path",{...base,d:`M 0,0 Q ${(w*.56).toFixed(2)},0 ${w},${(h/2).toFixed(2)} Q ${(w*.56).toFixed(2)},${h} 0,${h} Q ${(w*.23).toFixed(2)},${(h/2).toFixed(2)} 0,0 Z`});
  else if(b.type==="NOT"){shape=tag("path",{...base,d:`M 0,0 L ${(w-8).toFixed(2)},${(h/2).toFixed(2)} L 0,${h} Z`})+tag("circle",{cx:w-4,cy:h/2,r:4,stroke:ink,"stroke-width":1.6,fill});}
  else if(compact.has(b.type))shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:9,ry:9});
- else {shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:b.type==="box"?4:3});if(b.type==="DFF"){const p=b.ports.CLK,side=p?.side??"west";const d=side==="west"?`M 0,${h-16} l 9,6 -9,6`:side==="south"?`M ${w/2-6},${h} l 6,-9 6,9`:side==="north"?`M ${w/2-6},0 l 6,9 6,-9`:`M ${w},${h-16} l -9,6 9,6`;shape+=tag("path",{d,stroke:ink,"stroke-width":1.8,fill:"none"});}}
+ else {shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:b.type==="box"?4:3});if(b.type==="FIFO"){const x0=44,x1=w-44,y0=h/2-12,n=5,cw=(x1-x0)/n;shape+=tag("rect",{x:x0,y:y0,width:x1-x0,height:24,stroke:ink,"stroke-width":1.2,fill:pal.paper});for(let i=1;i<n;i++)shape+=tag("line",{x1:x0+cw*i,y1:y0,x2:x0+cw*i,y2:y0+24,stroke:ink,"stroke-width":1.2});shape+=tag("path",{d:`M ${x1+4},${h/2} l -8,-4 0,8 Z`,fill:ink,stroke:"none"});}
+ if(b.type==="DFF"||b.type==="FIFO"){const p=b.ports.CLK,side=p?.side??"west";const d=side==="west"?`M 0,${h-16} l 9,6 -9,6`:side==="south"?`M ${w/2-6},${h} l 6,-9 6,9`:side==="north"?`M ${w/2-6},0 l 6,9 6,-9`:`M ${w},${h-16} l -9,6 9,6`;shape+=tag("path",{d,stroke:ink,"stroke-width":1.8,fill:"none"});}}
  const operators:Record<string,string>={ADD:"+",SUB:"−",CMP:b.params.op==="ne"?"≠":"="};
- const title=b.type==="MUX"?"":b.label==="box"?b.id:b.label===b.type?(operators[b.type]??(["AND","OR","NOT"].includes(b.type)?"":b.label)):b.label,tx=b.type==="MUX"?w*.48:b.type==="ALU"?w*.6:w/2,ty=compact.has(b.type)||b.type==="MUX"||b.type==="ALU"?h/2+4:21,fs=operators[b.type]?24:b.type==="ALU"?13:compact.has(b.type)||b.type==="MUX"?11:13;
- let out=`<g s:type="cdiag_${esc(b.id)}" transform="translate(30,20)" s:width="${w}" s:height="${h}" id="cell_${esc(b.id)}"><s:alias val="CDL__${esc(b.id)}"/>${shape}${title?tag("text",{x:tx.toFixed(2),y:ty.toFixed(2),"text-anchor":"middle","font-size":fs,"font-weight":"bold",fill:ink,stroke:"none"},title):""}`;
+ const title=trap.has(b.type)?"":b.type==="FIFO"&&b.label==="FIFO"?`FIFO (${b.params.depth??8})`:b.label==="box"?b.id:b.label===b.type?(operators[b.type]??(["AND","OR","NOT"].includes(b.type)?"":b.label)):b.label,tx=b.type==="MUX"?w*.48:b.type==="DEMUX"?w*.52:b.type==="ALU"?w*.6:w/2,ty=compact.has(b.type)||trap.has(b.type)||b.type==="ALU"?h/2+4:21,fs=operators[b.type]?24:b.type==="ALU"?13:compact.has(b.type)||trap.has(b.type)?11:13;
+ let tX=tx,tY=ty;if(xf){if(ty===21){tX=W/2;tY=(["west","east","north","south"] as Side[]).some(sd=>sides[sd].length&&rotSide(sd)==="north")?40:21;}else[tX,tY]=T(tx,ty);}
+ let out=`<g s:type="cdiag_${esc(b.id)}" transform="translate(30,20)" s:width="${W}" s:height="${H}" id="cell_${esc(b.id)}"><s:alias val="CDL__${esc(b.id)}"/>${xf?`<g transform="${matrix}">${shape}</g>`:shape}${title?tag("text",{x:tX.toFixed(2),y:tY.toFixed(2),"text-anchor":"middle","font-size":fs,"font-weight":"bold",fill:ink,stroke:"none"},title):""}`;
  for(const side of ["west","east","north","south"] as Side[]){const ps=sides[side];ps.forEach((p,i)=>{let x:number,y:number,tx:number,ty:number,anchor:string;
-   if(side==="west"||side==="east"){y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):["AND","OR"].includes(b.type)&&side==="west"&&ps.length===2?h*(i===0?.32:.68):["AND","OR","NOT"].includes(b.type)?h*.5:h*(i+1)/(ps.length+1);x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(y-h*.5)/(h*.15)):b.type==="OR"&&side==="west"&&ps.length===2?w*.1:side==="west"?0:w;if(b.type==="MUX"&&side==="east")y=h*.5;tx=x+(side==="west"?7:-7);ty=y+3;anchor=side==="west"?"start":"end";}
-   else{x=w*(i+1)/(ps.length+1);y=b.type==="MUX"?h*(side==="north"?.385*x/w:1-.385*x/w):b.type==="ALU"?h*(side==="north"?.22*x/w:1-.22*x/w):side==="north"?0:h;tx=x;ty=y+(side==="north"?(compact.has(b.type)||b.type==="MUX"||b.type==="ALU"?13:35):(compact.has(b.type)?-6:b.type==="MUX"||b.type==="ALU"?-8:-12));anchor="middle";}
-   const label=["AND","OR","NOT","MUX"].includes(b.type)?"":p.name;
-   out+=`<g s:x="${x.toFixed(2)}" s:y="${y.toFixed(2)}" s:pid="${esc(p.name)}"/>${label?`<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="${anchor}" font-size="${compact.has(b.type)?9:10}" fill="${ink}" stroke="none">${esc(label)}</text>`:""}`;
+   if(side==="west"||side==="east"){y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):["AND","OR"].includes(b.type)&&side==="west"&&ps.length===2?h*(i===0?.32:.68):["AND","OR","NOT"].includes(b.type)?h*.5:h*(i+1)/(ps.length+1);x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(y-h*.5)/(h*.15)):b.type==="OR"&&side==="west"&&ps.length===2?w*.1:side==="west"?0:w;if(b.type==="MUX"&&side==="east")y=h*.5;tx=x+(side==="west"?12:-12);ty=y+3;anchor=side==="west"?"start":"end";}
+   else{x=w*(i+1)/(ps.length+1);y=b.type==="MUX"?h*(side==="north"?.385*x/w:1-.385*x/w):b.type==="DEMUX"?h*(side==="north"?.385*(1-x/w):.615+.385*x/w):b.type==="ALU"?h*(side==="north"?.22*x/w:1-.22*x/w):side==="north"?0:h;tx=x;ty=y+(side==="north"?(compact.has(b.type)||trap.has(b.type)||b.type==="ALU"?17:39):(compact.has(b.type)?-10:trap.has(b.type)||b.type==="ALU"?-12:-16));anchor="middle";}
+   const sd=xf?rotSide(side):side;
+   if(xf){[x,y]=T(x,y);tx=sd==="west"?x+12:sd==="east"?x-12:x;ty=sd==="west"||sd==="east"?y+3:sd==="north"?y+17:y-12;anchor=sd==="west"?"start":sd==="east"?"end":"middle";}
+   const label=["AND","OR","NOT","MUX","DEMUX"].includes(b.type)?"":p.name;
+   const [ix,iy]=sd==="west"?[1,0]:sd==="east"?[-1,0]:sd==="north"?[0,1]:[0,-1],arrow=(tipX:number,tipY:number,baseX:number,baseY:number)=>tag("path",{d:`M ${tipX.toFixed(2)},${tipY.toFixed(2)} L ${(baseX-iy*3.5).toFixed(2)},${(baseY+ix*3.5).toFixed(2)} L ${(baseX+iy*3.5).toFixed(2)},${(baseY-ix*3.5).toFixed(2)} Z`,fill:ink,stroke:"none"});
+   out+=(p.direction==="input"?arrow(x+ix*7,y+iy*7,x,y):arrow(x,y,x+ix*7,y+iy*7))+`<g s:x="${x.toFixed(2)}" s:y="${y.toFixed(2)}" s:pid="${esc(p.name)}"/>${label?`<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" text-anchor="${anchor}" font-size="${compact.has(b.type)?9:10}" fill="${ink}" stroke="none">${esc(label)}</text>`:""}`;
   });}
  return out+"</g>";
 }

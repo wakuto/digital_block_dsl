@@ -52,6 +52,13 @@ class Reader {
     } while (this.take(","));
     return result;
   }
+  /** Parses inline orientation modifiers: `@90`, `@180`, `@270`, `@flipx`, `@flipy`. */
+  orientation(o: Pick<Block, "rotation" | "flipX" | "flipY">): void {
+    while (this.take("@")) {
+      if (this.t.kind === "int") { const deg = this.integer(); if (![0, 90, 180, 270].includes(deg)) this.fail("rotation must be 0, 90, 180 or 270"); o.rotation = deg as Block["rotation"]; }
+      else { const w = this.word().value; if (w === "flipx") o.flipX = true; else if (w === "flipy") o.flipY = true; else this.fail("expected 90, 180, 270, flipx or flipy"); }
+    }
+  }
   params(): Record<string, string | number> {
     const result: Record<string, string | number> = {}; this.need("(");
     if (!this.take(")")) { do { const key = this.word(); this.need("="); let val: string | number;
@@ -152,15 +159,18 @@ export function parse(source: string): Diagram {
       if(name.value in d.blocks||name.value in d.ports)throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(name.value)}`,name.line);
       let type:string,label:string,params:Record<string,string|number>={};
       if(r.is("box")){r.pop();type="box";label=r.string();}else{type=r.word().value;label=type;if(r.is("("))params=r.params();}
-      const preset=validatePreset(type,params,name.line), ports=preset??{};let style:string|null=null;
+      const preset=validatePreset(type,params,name.line), ports=preset??{};let style:string|null=null;const orient={rotation:0 as Block["rotation"],flipX:false,flipY:false};r.orientation(orient);
       const next=r.ts[r.pos+1],after=r.ts[r.pos+2];
       if(r.is("{")&&(next.value==="}"||(next.kind==="word"&&after.kind!=="punct"))&&r.take("{")){while(!r.take("}")){if(r.is("style")){r.pop();style=r.word().value;if(!["logic","storage","control","neutral","accent"].includes(style))r.fail("invalid style");}
           else if(r.is("label")){r.pop();label=r.string();}
           else if(r.is("rank")){const k=r.pop();ranks.push({id:name.value,rank:r.integer(),line:k.line});}
+          else if(r.is("rotate")){r.pop();const deg=r.integer();if(![0,90,180,270].includes(deg))r.fail("rotate must be 0, 90, 180 or 270");orient.rotation=deg as Block["rotation"];}
+          else if(r.is("flipx")){r.pop();orient.flipX=true;}
+          else if(r.is("flipy")){r.pop();orient.flipY=true;}
           else if(r.is("in")||r.is("out")){const local=r.pop(), dir:Direction=local.value==="in"?"input":"output", extras=r.ports(dir);for(const [pn,p]of Object.entries(extras)){if(ports[pn]){const old=ports[pn];if(!preset||old.direction!==p.direction||(p.width!==null&&p.width!==old.width))throw new DiagramError("E102",`incompatible duplicate port ${name.value}.${pn}`,p.line);if(p.side)old.side=p.side;}else{if(preset)throw new DiagramError("E102",`cannot add port ${JSON.stringify(pn)} to builtin ${type}`,p.line);ports[pn]=p;}}}
           else r.fail("expected block body declaration");}}
       if(!Object.keys(ports).length)throw new DiagramError("E203",`${name.value} has no ports; declare them using a block body`,name.line);
-      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,rank:null};continue;
+      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,rank:null,...orient};continue;
     }
     r.pos--;connection();
   }
