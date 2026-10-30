@@ -38,6 +38,8 @@ The repository includes larger examples and their rendered diagrams:
 - [`streaming_fir.cdl`](examples/streaming_fir.cdl) — a three-tap FIR pipeline.
 - [`dma_engine.cdl`](examples/dma_engine.cdl) — a DMA controller and memory interface.
 - [`bit_manipulation.cdl`](examples/bit_manipulation.cdl) — bus concatenation, slices and shifts.
+- [`pipeline_ranks.cdl`](examples/pipeline_ranks.cdl) — a five-stage pipeline whose stages stay in order despite redirect, stall and write-back paths ([rendered](examples/rendered/pipeline_ranks.svg)).
+- [`register_file.cdl`](examples/register_file.cdl) — a 2R1W `REGFILE` and port names on the south side ([rendered](examples/rendered/register_file.svg)).
 
 ![Rendered logic primitives](examples/rendered/logic_primitives.svg)
 
@@ -93,7 +95,7 @@ diagram "Packet fields" {
 }
 ```
 
-Here `tag` occupies bits 15–12 of `assembled`, and `payload` occupies bits 11–0. A one-bit selection such as `packet[15]` has width one. Slices require the source port to have an explicit width. The compiler checks widths and slice bounds, and rejects conflicting drivers.
+Here `tag` occupies bits 15–12 of `assembled`, and `payload` occupies bits 11–0. A connection may also start with the braces directly, without naming the net: `{tag, payload} -> assembled`. A one-bit selection such as `packet[15]` has width one. Slices require the source port to have an explicit width. The compiler checks widths and slice bounds, and rejects conflicting drivers.
 
 ## Built-in blocks
 
@@ -107,10 +109,13 @@ Built-ins provide familiar ports and diagram symbols. `n` means `width`; default
 | `NOT` | `A[n] → Y[n]` | `width` |
 | `SHIFT`, `SHL`, `SHR`, `SAR` | `A[n], B[m] → Y[n]` | `width`, `shamt_width` |
 | `CMP` | `A[n], B[n] → Y[1]` | `width`, `op` (`eq` or `ne`; default `eq`) |
-| `MUX` | `A[n], B[n], S[1] → Y[n]` | `width` |
+| `MUX` | `A[n], B[n], S[1] → Y[n]` (`S=0` selects `A`, `S=1` selects `B`) | `width` |
 | `ALU` | `A[n], B[n], OP[op_width] → Y[n]` | `width`, `op_width` |
 | `DFF` | `D[n], CLK[1] → Q[n]` | `width` |
 | `SRAM` | `ADDR[addr_width], WDATA[n], WE[1], CLK[1] → RDATA[n]` | `width`, `addr_width` |
+| `REGFILE` | `RADDRi[addr_width]`, `WADDRj[addr_width], WDATAj[n], WEj[1]`, `CLK[1] → RDATAi[n]` | `width`, `addr_width` (default 5), `read_ports` (default 2), `write_ports` (default 1) |
+
+`SRAM` is a single-port (1RW) memory. For a multi-ported array use `REGFILE`: `i` counts read ports from 0 to `read_ports - 1` and `j` counts write ports, so `REGFILE(width=64, read_ports=2, write_ports=1)` is a 2R1W register file with `RADDR0`, `RADDR1`, `RDATA0`, `RDATA1`, `WADDR0`, `WDATA0` and `WE0`. The MUX symbol draws `A` as the upper input.
 
 Use `box "Label" { ... }` for a component that is not a built-in. Port sides can be set with `@west`, `@east`, `@north` or `@south`, for example `in CLK@north`. Built-in symbols may hide their port names in the rendered SVG; the names remain available in the DSL for connections.
 
@@ -126,6 +131,25 @@ These optional settings go inside the diagram body:
 | `netlabels` | `on`, `off` | `on` |
 
 Layout settings guide the renderer but cannot guarantee short routes for every circuit. Use `feedback` for diagrams with cycles. `netlabels` is retained in the intermediate representation; automatic placement of named-net labels on the final SVG is not implemented.
+
+## Keep stages in order
+
+Automatic placement follows the direction of the wires. A wire that goes back by two or more stages, such as a branch redirect from EX to IF or a stall from a hazard unit, can make the layout put a later stage on the left; `layout feedback` does not prevent this. Give blocks a rank to fix the order:
+
+```text
+rank 0: pc, next_pc, imem
+rank 1: if_id
+rank 2: decode, regfile, hazard
+
+group "IF": pc, next_pc, imem
+group "ID": decode, regfile, hazard
+```
+
+`rank N: block, ...` places those blocks in column band `N`. Bands follow `direction`: with `LR`, every rank-0 block is to the left of every rank-1 block. A block in a band may still use several columns inside it, and blocks without a rank are placed freely. A rank can also be written inside a block body as `rank 2`. Ranks apply to blocks only, and a block may not have two different ranks.
+
+`group "Label": block, ...` draws a dashed, labelled frame around the listed blocks after layout. The frame is the bounding box of its members; it does not move blocks. Give the members of a group the same rank or consecutive ranks, or the frame may enclose other blocks. Group frames are drawn by `render` and `createRenderer`; `bundle` output has no frames.
+
+`rank` and `group` are statements only when followed by a number or a string, so blocks and ports may still be named `rank` or `group`.
 
 ## Command line
 
@@ -183,6 +207,7 @@ Load Netlist2SVG's browser bundle and ELK bundle before calling `createRenderer`
 
 ```sh
 docker compose run --rm typescript
+docker compose run --rm typescript npm test
 npm run cdiag -- check examples/bit_manipulation.cdl
 npm run cdiag -- render examples/bit_manipulation.cdl -o build/bit_manipulation.svg
 ```
