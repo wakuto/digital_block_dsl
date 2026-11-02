@@ -368,4 +368,8 @@ Run the tests:
 npm test
 ```
 
+The tests parse and render every file in `examples/` and check the built-in blocks, orientation and port order.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and every pull request. It builds and tests on Node.js 22 and 24, checks and renders every example (the SVGs are attached to the run), and builds the Docker image. Run the same steps locally with `npm ci && npm run build && npm test`.
+
 Out of scope for now: hierarchical modules, constants, HDL expressions, bidirectional bundles, manual routing and interactive editing.
