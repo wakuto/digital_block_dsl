@@ -25,7 +25,9 @@ export function compileNetlist(diagram: Diagram, customSkin = false) {
   for(const [id,b]of Object.entries(diagram.blocks)){const connections:Record<string,number[]>={},port_directions:DiagramModule["cells"][string]["port_directions"]={};for(const [pn,p]of Object.entries(b.ports)){connections[pn]=vectors[`${id}.${pn}`];port_directions[pn]=p.direction;}
     const wideMux=b.type==="MUX"&&Number(b.params.inputs??2)>2;
     const cellType=b.type==="CMP"&&b.params.op==="ne"?"$ne":wideMux?"MUX":SKIN_TYPES[b.type]??(b.type==="box"?b.label:b.type);
-    const cell:DiagramModule["cells"][string]={hide_name:0,type:customSkin?`CDL__${id}`:cellType,parameters:{},attributes:{name:b.label},port_directions,connections};
+    const attributes:DiagramModule["cells"][string]["attributes"]={name:b.label};
+    if(b.rank!=null)attributes["org.eclipse.elk.partitioning.partition"]=b.rank;
+    const cell:DiagramModule["cells"][string]={hide_name:0,type:customSkin?`CDL__${id}`:cellType,parameters:{},attributes,port_directions,connections};
     if(!customSkin&&["MUX","DFF"].includes(b.type))cell.parameters.WIDTH=Number(b.params.width??32);cells[id]=cell;
   }
   const ports:DiagramModule["ports"]={};

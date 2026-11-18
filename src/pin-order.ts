@@ -26,8 +26,8 @@ export function swappableInputs(diagram: Diagram) {
       pins.push(p.name);
       groups.set(side,pins);
     }
-    const quarterTurn = (diagram.direction === "TB" || diagram.direction === "BT")
-      && !Object.values(block.ports).some(p => p.explicitSide);
+    const quarterTurn = block.explicitRotation||block.rotation ? block.rotation===90||block.rotation===270
+      : (diagram.direction === "TB" || diagram.direction === "BT")&&!Object.values(block.ports).some(p => p.explicitSide);
     return [...groups].filter(([,pins]) => pins.filter(pin => connected.has(block.id + "." + pin)).length > 1).map(([side,pins]) => ({
       block: block.id, pins,
       axis: ((side === "north" || side === "south") !== quarterTurn ? "x" : "y") as "x" | "y",

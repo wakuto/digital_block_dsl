@@ -161,6 +161,17 @@ export function embedDrawio(svg:string,layout:NetlistGraph,diagram:Diagram,palet
   }
 
   const shapes:string[]=[];
+  const frames=children(root).filter(node=>node[1].class==="cdiag-group");
+  for(const [i,frame] of frames.entries()){
+    const [,rect]=children(frame)[0];
+    const value=children(frame)[1].slice(2).filter(part=>typeof part==="string").join("");
+    const x=Math.floor(Number(rect.x)/gridSize)*gridSize, y=Math.floor(Number(rect.y)/gridSize)*gridSize;
+    const width=Math.ceil((Number(rect.x)+Number(rect.width))/gridSize)*gridSize-x;
+    const height=Math.ceil((Number(rect.y)+Number(rect.height))/gridSize)*gridSize-y;
+    const style="rounded=1;dashed=1;fillColor=none;html=0;align=left;verticalAlign=top;spacingLeft=7;spacingTop=4;fontStyle=1;"
+      +`strokeColor=${palette.ink};fontColor=${palette.ink};`;
+    shapes.push(element("mxCell",{id:"group"+i,value,style,vertex:1,parent:1,connectable:0},geometry({x,y,width,height})));
+  }
   for(const node of vertices.values()){
     const {id,w,h,bounds,scale,table}=node;
     if(table){

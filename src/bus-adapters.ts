@@ -3,7 +3,7 @@ export interface DiagramCell {
   hide_name: number;
   type: string;
   parameters: Record<string,number>;
-  attributes: Record<string,string>;
+  attributes: Record<string,string|number>;
   port_directions: Record<string,"input"|"output">;
   connections: Record<string,number[]>;
 }

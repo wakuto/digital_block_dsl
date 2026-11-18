@@ -16,25 +16,34 @@ const PRESETS={compact:{layers:24,nodes:20,edge:12},balanced:{layers:45,nodes:38
 type Palette=typeof PALETTES.light;
 const esc=(v:unknown)=>String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&apos;");
 const tag=(name:string,attrs:Record<string,unknown>={},content?:string)=>content===undefined?`<${name}${Object.entries(attrs).map(([k,v])=>` ${k}="${esc(v)}"`).join("")}/>`:`<${name}${Object.entries(attrs).map(([k,v])=>` ${k}="${esc(v)}"`).join("")}>${esc(content)}</${name}>`;
+const trapInset=30;
 const compact=new Set(["ADD","SUB","SHIFT","SHL","SHR","SAR","CMP","AND","OR","XOR","NOT"]);
-const autoOriented=new Set([...compact,"ALU","MUX"]);
+const autoOriented=new Set([...compact,"ALU","MUX","DEMUX"]);
 const tableRowHeight=30;
 const facing=["west","north","east","south"] as const;
 const flowTurn={LR:0,TB:1,RL:2,BT:3} as const;
+const rotationFlow=["LR","TB","RL","BT"] as const;
 type Flow=Diagram["direction"];
 
 // Turn the outline only. ELK needs the anchors in the final coordinate frame.
 // Text is positioned in that same frame so it stays upright.
-function drawingFrame(flow:Flow,w:number,h:number){
+function drawingFrame(flow:Flow,w:number,h:number,flipX=false,flipY=false){
  const turn=flowTurn[flow];
  const matrix=flow==="TB"?[0,1,-1,0,h,0]:flow==="RL"?[-1,0,0,-1,w,h]:flow==="BT"?[0,-1,1,0,0,w]:[1,0,0,1,0,0];
- const [a,b,c,d,e,f]=matrix;
  const quarter=turn%2===1;
+ const width=quarter?h:w,height=quarter?w:h;
+ if(flipX){matrix[0]*=-1;matrix[2]*=-1;matrix[4]=width-matrix[4];}
+ if(flipY){matrix[1]*=-1;matrix[3]*=-1;matrix[5]=height-matrix[5];}
+ const [a,b,c,d,e,f]=matrix;
+ const turned=turn!==0||flipX||flipY;
  return {
-   width:quarter?h:w,height:quarter?w:h,turned:turn!==0,
-   outline:(shape:string)=>turn?`<g transform="matrix(${matrix.join(",")})">${shape}</g>`:shape,
+   width,height,turned,
+   outline:(shape:string)=>turned?`<g transform="matrix(${matrix.join(",")})">${shape}</g>`:shape,
    point:(x:number,y:number):[number,number]=>[a*x+c*y+e,b*x+d*y+f],
-   side:(side:Side):Side=>facing[(facing.indexOf(side)+turn)%4],
+   side:(side:Side):Side=>{
+     const next=(facing.indexOf(side)+turn)%4;
+     return (next%2===0?flipX:flipY)?facing[(next+2)%4]:facing[next];
+   },
    // A, B, ... stay in reading order along the edge after the turn.
    index:(side:Side,i:number,n:number)=>{
      const step=side==="west"||side==="east"?(c||d):(a||b);
@@ -93,12 +102,12 @@ function muxSvg(b:Block,pal:Palette,sides:Record<Side,Port[]>,flow:Flow):string 
  const data=Object.values(b.ports).filter(p=>p.direction==="input"&&p.name!=="S");
  const vertical=data.every(p=>p.side==="north")&&b.ports.Y?.side==="south";
  // Keep the same slope at every size, as in the circuit symbol.
- const depth=30;
+ const depth=trapInset;
  const inputCount=vertical?sides.north.length:sides.west.length;
  const outputCount=vertical?sides.south.length:sides.east.length;
  const span=Math.ceil(Math.max(78,24*inputCount+30,2*depth+9*outputCount)/10)*10;
  const w=vertical?span:depth,h=vertical?depth:span;
- const frame=drawingFrame(flow,w,h);
+ const frame=drawingFrame(flow,w,h,b.flipX,b.flipY);
  const outline=vertical
    ?`M 0,0 L ${span},0 L ${span-depth},${depth} L ${depth},${depth} Z`
    :`M 0,0 L ${depth},${depth} L ${depth},${span-depth} L 0,${span} Z`;
@@ -245,19 +254,27 @@ function blockSvg(b:Block,pal:Palette,direction:Flow,order?:ReadonlyMap<string,n
  if(b.table)return tableSvg(b,pal);
  const sides:Record<Side,Port[]>={west:[],east:[],north:[],south:[]};for(const p of Object.values(b.ports))sides[p.side??(p.direction==="input"?"west":"east")].push(p);
  for(const side of facing)sides[side]=orderedSlots(sides[side],order);
- const flow=b.builtin&&autoOriented.has(b.type)&&!Object.values(b.ports).some(p=>p.explicitSide)?direction:"LR";
+ const flow=b.explicitRotation||b.rotation?rotationFlow[b.rotation/90]
+   :b.builtin&&autoOriented.has(b.type)&&!Object.values(b.ports).some(p=>p.explicitSide)?direction:"LR";
  if(b.type==="MUX")return muxSvg(b,pal,sides,flow);
  const labelLines=b.label.split("\n"),len=(s:Port[])=>s.reduce((n,p)=>Math.max(n,p.name.length),0),maxSide=Math.max(sides.west.length,sides.east.length);
  const logicGate=["AND","OR","NOT"].includes(b.type);
  const orInset=10;
- let w:number,h:number;if(logicGate){w=80;h=60;}
+ let w:number,h:number;if(logicGate){w=80;h=Math.max(60,Math.ceil((20*maxSide+14)/10)*10);}
  else if(compact.has(b.type)){w=Math.max(66,42+b.label.length*7.5,30+13*Math.max(sides.north.length,sides.south.length));h=Math.max(50,19*maxSide+14);}
+ else if(b.type==="DEMUX"){w=trapInset;h=Math.ceil(Math.max(78,24*maxSide+30)/10)*10;}
  else if(b.type==="ALU"){w=Math.max(110,40+b.label.length*8);h=Math.max(100,32*maxSide+40);}
- else {w=Math.max(108,18+Math.max(...labelLines.map(x=>x.length))*7.5,42+(len(sides.west)+len(sides.east))*7.2,54+25*Math.max(sides.north.length,sides.south.length));h=Math.max(70,54+24*maxSide,sides.north.length&&sides.south.length?100:70);}
+ else {
+   w=Math.max(108,18+Math.max(...labelLines.map(x=>x.length))*7.5,42+(len(sides.west)+len(sides.east))*7.2,54+25*Math.max(sides.north.length,sides.south.length),...(["north","south"] as const).map(side=>(sides[side].length+1)*(len(sides[side])*6.2+10)));
+   h=Math.max(70,54+24*maxSide,sides.north.length&&sides.south.length?100:70);
+   if(flow==="TB"||flow==="BT")h=Math.max(h,24+Math.max(...labelLines.map(x=>x.length))*7.5,36*maxSide+30,42+(len(sides.north)+len(sides.south))*7.2);
+   if(b.type==="FIFO")w=Math.max(w,150);
+ }
  const roundedBox=compact.has(b.type)&&!logicGate;
  const step=roundedBox?10:1;
  w=Math.ceil(w/step)*step;h=Math.ceil(h/step)*step;const ink=pal.ink,fill=pal[defaultStyle(b) as keyof Palette]??pal.neutral,base={stroke:ink,"stroke-width":1.6,fill,class:"symbol $cell_id"};let shape="";
- if(b.type==="ALU")shape=tag("path",{...base,d:`M 0,0 L ${w},${(.22*h).toFixed(2)} L ${w},${(.78*h).toFixed(2)} L 0,${h} L 0,${(.65*h).toFixed(2)} L ${(.18*w).toFixed(2)},${(.5*h).toFixed(2)} L 0,${(.35*h).toFixed(2)} Z`});
+ if(b.type==="DEMUX")shape=tag("path",{...base,d:`M 0,${trapInset} L ${w},0 L ${w},${h} L 0,${h-trapInset} Z`});
+ else if(b.type==="ALU")shape=tag("path",{...base,d:`M 0,0 L ${w},${(.22*h).toFixed(2)} L ${w},${(.78*h).toFixed(2)} L 0,${h} L 0,${(.65*h).toFixed(2)} L ${(.18*w).toFixed(2)},${(.5*h).toFixed(2)} L 0,${(.35*h).toFixed(2)} Z`});
  else if(b.type==="AND"){
    // Two cubic quarter-ellipses keep the tip on the output under nonuniform resizing.
    const arcStart=.48*w, half=h/2, k=4/3*Math.tan(Math.PI/8);
@@ -276,26 +293,35 @@ function blockSvg(b:Block,pal:Palette,direction:Flow,order?:ReadonlyMap<string,n
  }
  else if(b.type==="NOT"){shape=tag("path",{...base,d:`M 0,0 L ${(w-8).toFixed(2)},${(h/2).toFixed(2)} L 0,${h} Z`})+tag("circle",{cx:w-4,cy:h/2,r:4,stroke:ink,"stroke-width":1.6,fill});}
  else if(compact.has(b.type))shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:9,ry:9});
- else {shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:b.type==="box"?4:3});if(b.type==="DFF"){const p=b.ports.CLK,side=p?.side??"west";const d=side==="west"?`M 0,${h-16} l 9,6 -9,6`:side==="south"?`M ${w/2-6},${h} l 6,-9 6,9`:side==="north"?`M ${w/2-6},0 l 6,9 6,-9`:`M ${w},${h-16} l -9,6 9,6`;shape+=tag("path",{d,stroke:ink,"stroke-width":1.8,fill:"none"});}}
+ else {shape=tag("rect",{...base,x:0,y:0,width:w,height:h,rx:b.type==="box"?4:3});if(b.type==="FIFO"){const x0=44,x1=w-44,y0=h/2-12,n=5,cw=(x1-x0)/n;shape+=tag("rect",{x:x0,y:y0,width:x1-x0,height:24,stroke:ink,"stroke-width":1.2,fill:pal.paper});for(let i=1;i<n;i++)shape+=tag("line",{x1:x0+cw*i,y1:y0,x2:x0+cw*i,y2:y0+24,stroke:ink,"stroke-width":1.2});shape+=tag("path",{d:`M ${x1+4},${h/2} l -8,-4 0,8 Z`,fill:ink,stroke:"none"});}
+ if(b.type==="DFF"||b.type==="FIFO"){const p=b.ports.CLK,side=p?.side??"west";const d=side==="west"?`M 0,${h-16} l 9,6 -9,6`:side==="south"?`M ${w/2-6},${h} l 6,-9 6,9`:side==="north"?`M ${w/2-6},0 l 6,9 6,-9`:`M ${w},${h-16} l -9,6 9,6`;shape+=tag("path",{d,stroke:ink,"stroke-width":1.8,fill:"none"});}}
  const operators:Record<string,string>={ADD:"+",SUB:"−",CMP:b.params.op==="ne"?"≠":"="};
- const title=b.label==="box"?b.id:b.label===b.type?(operators[b.type]??(["AND","OR","NOT"].includes(b.type)?"":b.label)):b.label,tx=b.type==="ALU"?w*.6:w/2,ty=compact.has(b.type)||b.type==="ALU"?h/2+4:21,fs=operators[b.type]?24:b.type==="ALU"?13:compact.has(b.type)?11:13;
- const frame=drawingFrame(flow,w,h);
- const [titleX,titleY]=frame.point(tx,ty-4);
+ const title=b.type==="DEMUX"?"":b.type==="FIFO"&&b.label==="FIFO"?`FIFO (${b.params.depth??8})`:b.label==="box"?b.id:b.label===b.type?(operators[b.type]??(logicGate?"":b.label)):b.label;
+ const centered=compact.has(b.type)||b.type==="ALU";
+ const frame=drawingFrame(flow,w,h,b.flipX,b.flipY);
+ const [titleX,titleY]=centered?frame.point(b.type==="ALU"?w*.6:w/2,h/2)
+   :[frame.width/2,frame.turned&&facing.some(side=>sides[side].length&&frame.side(side)==="north")?36:17];
+ const fs=operators[b.type]?24:b.type==="ALU"?13:compact.has(b.type)?11:13;
  let out=`<g s:type="cdiag_${esc(b.id)}" transform="translate(30,20)" s:width="${frame.width}" s:height="${frame.height}" id="cell_${esc(b.id)}"><s:alias val="CDL__${esc(b.id)}"/>${frame.outline(shape)}${title?tag("text",{x:titleX.toFixed(2),y:(titleY+4).toFixed(2),"text-anchor":"middle","font-size":fs,"font-weight":"bold",fill:ink,stroke:"none"},title):""}`;
  for(const side of ["west","east","north","south"] as const){const ps=sides[side];ps.forEach((p,order)=>{
    const i=frame.index(side,order,ps.length);
    let x:number,y:number,tx:number,ty:number,anchor:string;
    const spacing=(side==="west"||side==="east"?h:w)/(ps.length+1);
-   const slot=roundedBox?gridSlot(spacing*(i+1),spacing):spacing*(i+1);
+   const slot=compact.has(b.type)||b.type==="DEMUX"?gridSlot(spacing*(i+1),spacing):spacing*(i+1);
    if(side==="west"||side==="east"){
-     y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77):slot;
+     y=b.type==="ALU"&&side==="west"&&ps.length===2?h*(i===0?.23:.77)
+       :b.type==="DEMUX"&&side==="west"?trapInset+(h-2*trapInset)*(i+.5)/ps.length:slot;
      const f=y/h;
      x=b.type==="ALU"&&side==="west"?w*.18*Math.max(0,1-Math.abs(f-.5)/.15)
        :b.type==="OR"&&side==="west"?orInset*4.5*f*(1-f):side==="west"?0:w;
      tx=x+(side==="west"?12:-12);ty=y+3;anchor=side==="west"?"start":"end";
    }
-   else{x=slot;y=b.type==="ALU"?h*(side==="north"?.22*x/w:1-.22*x/w):side==="north"?0:h;tx=x;ty=y+(side==="north"?(compact.has(b.type)||b.type==="ALU"?17:35):-12);anchor="middle";}
-   const label=logicGate||b.type==="CMP"?"":p.name;
+   else{
+     x=slot;
+     const inset=b.type==="ALU"?.22*h*x/w:b.type==="DEMUX"?trapInset*(1-x/w):0;
+     y=side==="north"?inset:h-inset;tx=x;ty=y+(side==="north"?(centered?17:39):centered?-12:-16);anchor="middle";
+   }
+   const label=logicGate||b.type==="CMP"||b.type==="DEMUX"?"":p.name;
    const edge=frame.side(side);
    if(frame.turned){
      [x,y]=frame.point(x,y);
@@ -329,6 +355,7 @@ export function layoutOptions(d:Diagram,layout=d.layout):Record<string,string>{
    "org.eclipse.elk.layered.cycleBreaking.strategy":"GREEDY",
    "org.eclipse.elk.layered.layering.strategy":"LONGEST_PATH",
  };
+ if(Object.values(d.blocks).some(b=>b.rank!=null)) options["org.eclipse.elk.partitioning.activate"]="true";
  if(d.mode==="microarchitecture"||(d.direction!=="LR"&&Object.keys(d.ports).length)){
    const margin=Math.ceil(Math.max(42,...Object.keys(d.ports).map(textWidth))+18);
    options["org.eclipse.elk.padding"]=`top=36,left=${margin},bottom=36,right=${margin}`;

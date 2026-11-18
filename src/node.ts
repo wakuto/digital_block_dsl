@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { compileSource, createRenderer, prepareRender } from "./render-core.js";
+import { compileSource, createRenderer, drawGroups, prepareRender } from "./render-core.js";
 import type { Netlist2SvgEngine, RenderOptions } from "./render-core.js";
 import type { ELK } from "elkjs";
 import { embedDrawio } from "./drawio.js";
@@ -34,5 +34,5 @@ export async function renderDrawioSvg(source:string, options:RenderOptions = {})
   const preview=structuredClone(layout);
   for(const edge of preview.edges)if(!widthLabels.has(edge.id))delete edge.labels;
   const svg=await netlist2svg.render(escapedSkin,compiled.netlist,undefined,preview);
-  return embedDrawio(svg,layout,compiled.diagram,PALETTES[compiled.diagram.theme],widthLabels);
+  return embedDrawio(drawGroups(svg,compiled.diagram),layout,compiled.diagram,PALETTES[compiled.diagram.theme],widthLabels);
 }

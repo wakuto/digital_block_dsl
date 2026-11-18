@@ -60,6 +60,13 @@ class Reader {
     } while (this.take(","));
     return result;
   }
+  /** Parses inline orientation modifiers: `@90`, `@180`, `@270`, `@flipx`, `@flipy`. */
+  orientation(o: Pick<Block, "rotation" | "flipX" | "flipY" | "explicitRotation">): void {
+    while (this.take("@")) {
+      if (this.t.kind === "int") { const deg = this.integer(); if (![0, 90, 180, 270].includes(deg)) this.fail("rotation must be 0, 90, 180 or 270"); o.rotation = deg as Block["rotation"]; o.explicitRotation = true; }
+      else { const w = this.word().value; if (w === "flipx") o.flipX = true; else if (w === "flipy") o.flipY = true; else this.fail("expected 90, 180, 270, flipx or flipy"); }
+    }
+  }
   params(): Record<string, string | number> {
     const result: Record<string, string | number> = {}; this.need("(");
     if (!this.take(")")) { do { const key = this.word(); this.need("="); let val: string | number;
@@ -189,7 +196,9 @@ export function parse(source: string, options: ParseOptions = {}): Diagram {
   }
   r.need("diagram");
   const title=r.string();r.need("{");
-  const d:Diagram={title,mode:"circuit",direction:"LR",theme:"light",layout:"balanced",netlabels:true,ports:{},blocks:{},nets:[],wirings:[]};
+  const d:Diagram={title,mode:"circuit",direction:"LR",theme:"light",layout:"balanced",netlabels:true,ports:{},blocks:{},nets:[],wirings:[],groups:[]};
+  const ranks:{id:string;rank:number;line:number}[]=[];
+  const ids=()=>{const out=[r.word()];while(r.take(","))out.push(r.word());return out;};
   let declaredMode = false;
   while(!r.take("}")){
     if(r.is("<eof>"))r.fail("unterminated diagram");const t=r.t;
@@ -199,15 +208,21 @@ export function parse(source: string, options: ParseOptions = {}): Diagram {
     if(r.is("layout")){r.pop();const x=r.word();if(!["balanced","compact","feedback"].includes(x.value))r.fail("invalid layout");d.layout=x.value as Diagram["layout"];continue;}
     if(r.is("netlabels")){r.pop();const x=r.word();if(x.value!=="on"&&x.value!=="off")r.fail("invalid netlabels setting");d.netlabels=x.value==="on";continue;}
     if(r.is("input")||r.is("output")){const dir=r.pop().value as Direction, declared=r.ports(dir);for(const [pn,p]of Object.entries(declared)){if(d.ports[pn]||d.blocks[pn])throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(pn)}`,p.line);d.ports[pn]=p;}continue;}
+    if(r.is("rank")&&r.ts[r.pos+1].kind==="int"){r.pop();const n=r.integer();r.need(":");for(const id of ids())ranks.push({id:id.value,rank:n,line:id.line});continue;}
+    if(r.is("group")&&r.ts[r.pos+1].kind==="string"){r.pop();const label=r.string();r.need(":");d.groups.push({label,members:ids().map(x=>x.value),line:t.line});continue;}
     if(r.is("net")){
       r.pop();const name=r.word();let width:number|null=null;if(r.take("[")){width=r.integer();r.need("]");if(width===0)throw new DiagramError("E201",`net ${name.value} width must be positive`,t.line);}r.need("=");const sources=r.signalExpr();r.need("->");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:name.value,width,line:t.line});continue;
     }
+    const connection=()=>{const start=r.t;const sources=r.signalExpr();if(!r.take("->"))r.fail("expected ':' for block declaration or '->' for connection");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:null,width:null,line:start.line});};
+    if(r.is("{")){connection();continue;}
     if(t.kind!=="word")r.fail("expected declaration");const name=r.word();
     if(r.take(":")){
       if(name.value in d.blocks||name.value in d.ports)throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(name.value)}`,name.line);
       let type:string,label:string,params:Record<string,string|number>={};
       if(r.is("box")){r.pop();type="box";label=r.string();}else{type=r.word().value;label=type;if(type==="table")label=r.t.kind==="string"?r.string():"";if(type==="record")label=r.string();if(r.is("("))params=r.params();}
       const preset=validatePreset(type,params,name.line);const ports=preset??{};let style:string|null=null;let table:Table|undefined;let structuredTable:StructuredTable|undefined;let recordFields:MicroField[]|undefined;const tableBindings:TableBinding[]=[];const fields:MicroField[]=[];const indices:string[]=[];
+      const orient:Pick<Block,"rotation"|"flipX"|"flipY"|"explicitRotation">={rotation:0,flipX:false,flipY:false};
+      r.orientation(orient);
       if(type==="table"||type==="record"){
         if(type==="table"){
           const allowed=["entries","rows","ellipsis","selected"];for(const k of Object.keys(params))if(!allowed.includes(k))throw new DiagramError("E202",`unsupported structured table parameter: ${k}`,name.line);
@@ -223,7 +238,10 @@ export function parse(source: string, options: ParseOptions = {}): Diagram {
           structuredTable={...(entries===undefined?{}:{entries}),rows,ellipsis:ell==="on",selected:selected as number|null,fields,indices};
         } else { if(Object.keys(params).length)throw new DiagramError("E202","record does not accept parameters",name.line);recordFields=fields; }
       }
-      if(r.take("{")){while(!r.take("}")){if(r.is("table")){const token=r.pop();if(type!=="box")throw new DiagramError("E202","table is only supported inside box blocks",token.line);if(table)throw new DiagramError("E102","duplicate table declaration",token.line);table=parseTable(r.params(),token.line);}
+      // A leading concatenation after the declaration also begins with "{".
+      const next=r.ts[r.pos+1], after=r.ts[r.pos+2];
+      const body=r.is("{")&&(next.value==="}"||next.kind==="word"&&after?.value!==","&&after?.value!=="."&&after?.value!=="[");
+      if(body&&r.take("{")){while(!r.take("}")){if(r.is("table")){const token=r.pop();if(type!=="box")throw new DiagramError("E202","table is only supported inside box blocks",token.line);if(table)throw new DiagramError("E102","duplicate table declaration",token.line);table=parseTable(r.params(),token.line);}
           else if((r.is("field")||r.is("index")||r.is("read")||r.is("write"))&&(type==="table"||type==="record")){
             const kind=r.pop();
             if(kind.value==="field") {const fn=r.word();r.need("[");const width=r.integer();r.need("]");if(!Number.isSafeInteger(width)||width<1)throw new DiagramError("E201","field width must be a positive safe integer",fn.line);let flabel=fn.value,use:string|null=null;if(r.take("label"))flabel=r.string();if(r.take("use"))use=r.string();if(fields.some(f=>f.id===fn.value))throw new DiagramError("E102",`duplicate field ${fn.value}`,fn.line);fields.push({id:fn.value,width,label:flabel,use,msb:0,lsb:0});}
@@ -257,6 +275,10 @@ export function parse(source: string, options: ParseOptions = {}): Diagram {
           }
           else if(r.is("style")){r.pop();style=r.word().value;if(!["logic","storage","control","neutral","accent"].includes(style))r.fail("invalid style");}
           else if(r.is("label")){r.pop();label=r.string();}
+          else if(r.is("rank")){const token=r.pop();ranks.push({id:name.value,rank:r.integer(),line:token.line});}
+          else if(r.is("rotate")){r.pop();const deg=r.integer();if(![0,90,180,270].includes(deg))r.fail("rotate must be 0, 90, 180 or 270");orient.rotation=deg as Block["rotation"];orient.explicitRotation=true;}
+          else if(r.take("flipx"))orient.flipX=true;
+          else if(r.take("flipy"))orient.flipY=true;
           else if(r.is("in")||r.is("out")){const local=r.pop(), dir:Direction=local.value==="in"?"input":"output", extras=r.ports(dir);if(type==="record")throw new DiagramError("E202","record ports are generated from its fields",local.line);for(const [pn,p]of Object.entries(extras)){if(ports[pn]){const old=ports[pn];if(!preset||old.direction!==p.direction||(p.width!==null&&p.width!==old.width))throw new DiagramError("E102",`incompatible duplicate port ${name.value}.${pn}`,p.line);if(p.side){old.side=p.side;old.explicitSide=true;}}else{if(preset)throw new DiagramError("E102",`cannot add port ${JSON.stringify(pn)} to builtin ${type}`,p.line);ports[pn]=p;}}}
           else r.fail("expected block body declaration");}}
       if(structuredTable){
@@ -281,13 +303,15 @@ export function parse(source: string, options: ParseOptions = {}): Diagram {
         for(const f of fields){if(ports[f.id])throw new DiagramError("E102",`record field id conflicts with port ${f.id}`,name.line);ports[f.id]={name:f.id,direction:"output",width:f.width,side:"south",line:name.line};}
       }
       if(!Object.keys(ports).length&&type!=="table")throw new DiagramError("E203",`${name.value} has no ports; declare them using a block body`,name.line);
-      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,...(table?{table}:{}),...(structuredTable?{structuredTable}:{}),...(recordFields?{recordFields}:{}),...(tableBindings.length?{tableBindings}:{})};continue;
+      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,rank:null,...orient,...(table?{table}:{}),...(structuredTable?{structuredTable}:{}),...(recordFields?{recordFields}:{}),...(tableBindings.length?{tableBindings}:{})};continue;
     }
-    r.pos--;const start=r.t;const sources=r.signalExpr();if(!r.take("->"))r.fail("expected ':' for block declaration or '->' for connection");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:null,width:null,line:start.line});
+    r.pos--;connection();
   }
   if(!r.is("<eof>"))r.fail("unexpected content after diagram");
   for(const p of Object.values(d.ports))if(d.blocks[p.name])throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(p.name)}`,p.line);
   d.mode=options.mode??d.mode;
   if(d.mode==="circuit"&&Object.values(d.blocks).some(b=>b.structuredTable||b.recordFields))throw new DiagramError("E202","structured tables and address records require microarchitecture mode");
+  for(const x of ranks){const b=d.blocks[x.id];if(!b)throw new DiagramError("E101",d.ports[x.id]?`rank applies to blocks only; diagram port ${JSON.stringify(x.id)} is placed automatically`:`unknown block ${JSON.stringify(x.id)} in rank`,x.line);if(b.rank!==null&&b.rank!==x.rank)throw new DiagramError("E106",`conflicting ranks ${b.rank} and ${x.rank} for ${JSON.stringify(x.id)}`,x.line);b.rank=x.rank;}
+  for(const g of d.groups){const seen=new Set<string>();for(const m of g.members){if(!d.blocks[m])throw new DiagramError("E101",`unknown block ${JSON.stringify(m)} in group ${JSON.stringify(g.label)}`,g.line);if(seen.has(m))throw new DiagramError("E102",`duplicate member ${JSON.stringify(m)} in group ${JSON.stringify(g.label)}`,g.line);seen.add(m);}}
   resolve(d);return d;
 }
