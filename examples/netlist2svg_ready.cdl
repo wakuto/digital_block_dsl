@@ -1,5 +1,3 @@
-version 1
-
 diagram "Datapath (stock Netlist2SVG skin)" {
     direction LR
     input a[32], b[32], select, clk

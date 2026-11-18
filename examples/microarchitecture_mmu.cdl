@@ -1,0 +1,52 @@
+diagram "MMU: TLB lookup and refill" {
+    mode microarchitecture
+    direction TB
+    layout feedback
+    input virtual_address[32]@north
+    output physical_address[32]@south, hit[1]@east, translation_valid[1]@west
+
+    va: record "Virtual address" {
+        field tag[15] label "VPN tag"
+        field set[5] label "VPN set"
+        field offset[12] label "Page offset"
+    }
+    tlb: table "TLB" {
+        field valid[1] label "Valid" use "Translation is present"
+        field tag[15] label "Tag" use "Compared with the VPN tag"
+        field ppn[20] label "PPN" use "Physical page number"
+        index SET@west
+        write FILL_VALID to valid
+        write FILL_TAG to tag
+        write FILL_PPN to ppn
+        read VALID from valid
+        read TAG from tag
+        read PPN from ppn
+    }
+    // The walker services misses (HIT=0); DONE marks the refill and its result.
+    walker: box "Page table walker" {
+        in VPN[20]@north, HIT[1]@east
+        out PPN[20]@south, DONE[1]@south
+    }
+    compare: CMP(width=15)
+    tlb_hit: AND(width=1)
+    ready: OR(width=1)
+    select: MUX(width=20)
+
+    virtual_address -> va.IN
+    va.set -> tlb.SET
+    va.tag -> compare.A
+    tlb.TAG -> compare.B
+    compare.Y -> tlb_hit.A
+    tlb.VALID -> tlb_hit.B
+    tlb_hit.Y -> hit, walker.HIT, ready.A, select.S
+
+    // The VPN is held until the outstanding lookup finishes.
+    net vpn[20] = {va.tag, va.set} -> walker.VPN
+    va.tag -> tlb.FILL_TAG
+    walker.PPN -> tlb.FILL_PPN, select.A
+    walker.DONE -> tlb.FILL_VALID, ready.B
+    ready.Y -> translation_valid
+
+    tlb.PPN -> select.B
+    net pa[32] = {select.Y, va.offset} -> physical_address
+}

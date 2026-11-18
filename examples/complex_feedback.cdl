@@ -1,5 +1,3 @@
-version 1
-
 diagram "Out-of-Order Issue / Bypass / Feedback" {
     direction LR
     theme light

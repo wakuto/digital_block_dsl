@@ -1,0 +1,39 @@
+diagram "TLBによるアドレス変換" {
+    direction TB
+    theme mono
+    layout feedback
+    address: box "仮想アドレス" {
+        table(columns="タグ|ページインデックス|オフセット")
+        out TAG[20]@south, INDEX[8]@south, OFFSET[12]@south
+    }
+    tags: box "TLBタグアレイ" {
+        table(rows=6, ellipsis=on, brace="")
+        in INDEX[8]@west
+        out TAG[20]@south
+        style storage
+    }
+    tlb: box "TLB" {
+        table(rows=6, ellipsis=on)
+        in INDEX[8]@west, FILL[20]@east
+        out PAGE[20]@south
+        style storage
+    }
+    compare: CMP(width=20) { label "比較回路" in A@north, B@north out Y@south }
+    miss: NOT(width=1)
+    pages: box "メモリに格納された\nページテーブル" {
+        table(rows=7, ellipsis=on, brace="TLBミス時")
+        in INDEX[8]@north, REQUEST[1]@west
+        out PAGE[20]@south
+        style storage
+    }
+    hit_result: box "TLBヒット" { in HIT[1]@north }
+    result: box "実アドレス" { in ADDRESS[32]@north }
+
+    address.TAG -> compare.A
+    address.INDEX -> tags.INDEX, tlb.INDEX, pages.INDEX
+    tags.TAG -> compare.B
+    compare.Y -> hit_result.HIT, miss.A
+    miss.Y -> pages.REQUEST
+    pages.PAGE -> tlb.FILL
+    net physical_address[32] = {tlb.PAGE, address.OFFSET} -> result.ADDRESS
+}

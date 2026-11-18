@@ -1,5 +1,3 @@
-version 1
-
 diagram "Concat and Split at Block Ports" {
     direction LR
     netlabels off
@@ -19,7 +17,7 @@ diagram "Concat and Split at Block Ports" {
     opcode -> decoder.INSTR[15:12]
     flags -> decoder.INSTR[11:8]
     imm -> decoder.INSTR[7:0]
-    {decoder.OPCODE, decoder.IMM} -> register.D
+    net instruction[16] = {decoder.OPCODE, decoder.IMM} -> register.D
     clk -> register.CLK
     register.Q[15:8] -> op_high
     register.Q[7:0] -> op_low

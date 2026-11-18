@@ -1,0 +1,73 @@
+diagram "Reservation station: wakeup and issue" {
+    mode microarchitecture
+    direction TB
+    layout compact
+    input slot[3]@west, wakeup_tag[8]@west
+    input dispatch_valid[1]@north, dispatch_tag[8]@north
+    input operand_a[16]@north, ready_a[1]@north
+    input operand_b[16]@north, ready_b[1]@north, destination[6]@north
+    output wakeup_mask[8]@south, issue_valid[1]@east
+    output issue_index[3]@south, issue_operands[32]@south, issue_dest[6]@south
+
+    rs: table "Reservation station" {
+        field valid[1] label "Valid" use "Slot contains an instruction"
+        field tag[8] label "Tag" use "Tag compared by the wakeup path"
+        field rdy_a[1] label "Ready A"
+        field rdy_b[1] label "Ready B"
+        field op_a[16] label "Operand A"
+        field op_b[16] label "Operand B"
+        field dest[6] label "Dest"
+        index DISPATCH@west
+        write ALLOC to valid
+        write SET_TAG to tag
+        write SET_A to op_a
+        write SET_READY_A to rdy_a
+        write SET_B to op_b
+        write SET_READY_B to rdy_b
+        write SET_DEST to dest
+        read VALID from valid all
+        read TAGS from tag all
+        read A from op_a all
+        read READY_A from rdy_a all
+        read B from op_b all
+        read READY_B from rdy_b all
+        read DESTS from dest all
+    }
+
+    compare: MATCH(entries=8, width=8) { in QUERY@west, DATA@north out MATCH@south }
+    wake: AND(width=8)
+    both_ready: AND(width=8)
+    ready_valid: AND(width=8)
+    pick: PRIORITY(entries=8) { in MATCH@north out INDEX@south, VALID@east }
+    issue: box "Read selected entry" {
+        in INDEX[3]@west, A[128]@north, B[128]@north, DESTS[48]@north
+        out OPERANDS[32]@south, DEST[6]@south
+    }
+
+    slot -> rs.DISPATCH
+    dispatch_valid -> rs.ALLOC
+    dispatch_tag -> rs.SET_TAG
+    operand_a -> rs.SET_A
+    ready_a -> rs.SET_READY_A
+    operand_b -> rs.SET_B
+    ready_b -> rs.SET_READY_B
+    destination -> rs.SET_DEST
+
+    wakeup_tag -> compare.QUERY
+    rs.TAGS -> compare.DATA
+    compare.MATCH -> wake.A
+    rs.VALID -> wake.B, ready_valid.B
+    wake.Y -> wakeup_mask
+
+    rs.READY_A -> both_ready.A
+    rs.READY_B -> both_ready.B
+    both_ready.Y -> ready_valid.A
+    ready_valid.Y -> pick.MATCH
+    pick.VALID -> issue_valid
+    pick.INDEX -> issue.INDEX, issue_index
+    rs.A -> issue.A
+    rs.B -> issue.B
+    rs.DESTS -> issue.DESTS
+    issue.OPERANDS -> issue_operands
+    issue.DEST -> issue_dest
+}

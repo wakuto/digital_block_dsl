@@ -1,5 +1,3 @@
-version 1
-
 diagram "DMA Transfer Engine" {
     direction LR
     layout feedback

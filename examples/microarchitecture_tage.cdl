@@ -1,0 +1,74 @@
+diagram "TAGE prediction path" {
+    mode microarchitecture
+    direction TB
+    layout compact
+    input pc[32]@north, history[16]@north
+    output prediction[1]@south
+
+    short_hash: box "Short-history hash" {
+        in PC[32]@north, GHR[8]@north
+        out INDEX[7]@south, TAG[8]@south
+    }
+    long_hash: box "Long-history hash" {
+        in PC[32]@north, GHR[16]@north
+        out INDEX[8]@south, TAG[8]@south
+    }
+
+    base: table "Base predictor" {
+        field ctr[2] use "Fallback prediction counter"
+        index SET@west
+        read CTR from ctr
+    }
+    short: table "Tagged table 1" {
+        field valid[1] use "Entry is allocated"
+        field tag[8] use "Compared with the short-history hash"
+        field ctr[2] use "Prediction counter"
+        field u[2] use "Usefulness for allocation; unused during lookup"
+        index SET@west
+        read VALID from valid
+        read TAG from tag
+        read CTR from ctr
+    }
+    long: table "Tagged table 2" {
+        field valid[1] use "Entry is allocated"
+        field tag[8] use "Compared with the long-history hash"
+        field ctr[2] use "Prediction counter"
+        field u[2] use "Usefulness for allocation; unused during lookup"
+        index SET@west
+        read VALID from valid
+        read TAG from tag
+        read CTR from ctr
+    }
+
+    eq1: CMP(width=8)
+    eq2: CMP(width=8)
+    hit1: AND(width=1)
+    hit2: AND(width=1)
+    // Provider select returns 2 for a long-history hit, 1 for a short-history
+    // hit if the long table misses, or 0 for the base predictor.
+    provider: box "Provider select" { in SHORT[1]@north, LONG[1]@north out SELECT[2]@south }
+    choose: MUX(width=2, inputs=3) { in A@north, B@north, C@north, S@east out Y@south }
+
+    pc[9:2] -> base.SET
+    pc -> short_hash.PC, long_hash.PC
+    history[7:0] -> short_hash.GHR
+    history -> long_hash.GHR
+    short_hash.INDEX -> short.SET
+    short_hash.TAG -> eq1.A
+    short.TAG -> eq1.B
+    eq1.Y -> hit1.A
+    short.VALID -> hit1.B
+    long_hash.INDEX -> long.SET
+    long_hash.TAG -> eq2.A
+    long.TAG -> eq2.B
+    eq2.Y -> hit2.A
+    long.VALID -> hit2.B
+
+    hit1.Y -> provider.SHORT
+    hit2.Y -> provider.LONG
+    provider.SELECT -> choose.S
+    base.CTR -> choose.A
+    short.CTR -> choose.B
+    long.CTR -> choose.C
+    choose.Y[1] -> prediction
+}

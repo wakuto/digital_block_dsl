@@ -1,5 +1,3 @@
-version 1
-
 diagram "Simple RISC-V Datapath" {
     direction LR
     layout feedback

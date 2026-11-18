@@ -1,5 +1,3 @@
-version 1
-
 diagram "Scheduler and ALU" {
     direction LR
     input dispatch[128], wakeup[16], op[4], operand[32]

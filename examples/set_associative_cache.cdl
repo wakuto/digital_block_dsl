@@ -1,0 +1,37 @@
+diagram "2ウェイ・セットアソシアティブキャッシュ" {
+    direction TB
+    theme mono
+    address: box "メモリアドレス" {
+        table(columns="タグ|インデックス|ライン内位置")
+        out TAG[20]@south, INDEX[8]@south
+    }
+    tags: box "タグアレイ" {
+        table(columns="|", rows=5, ellipsis=on, brace="セット", indices="0|1|2||n−1")
+        in INDEX[8]@west
+        out WAY0[20]@south, WAY1[20]@south
+        style storage
+    }
+    data: box "データアレイ" {
+        table(columns="|", rows=5, ellipsis=on)
+        in INDEX[8]@west
+        out WAY0[32]@south, WAY1[32]@south
+        style storage
+    }
+    compare0: CMP(width=20) { label "比較回路0" in A@north, B@north out Y@south }
+    compare1: CMP(width=20) { label "比較回路1" in A@north, B@north out Y@south }
+    hit: OR(width=1) { in A@north, B@north out Y@south }
+    choose: MUX(width=32) { in A@north, B@north, S@west out Y@south }
+    hit_result: box "ヒット／ミス" { in HIT[1]@north }
+    result: box "データ出力" { in DATA[32]@north }
+
+    address.TAG -> compare0.A, compare1.A
+    address.INDEX -> tags.INDEX, data.INDEX
+    tags.WAY0 -> compare0.B
+    tags.WAY1 -> compare1.B
+    compare0.Y -> hit.A
+    compare1.Y -> hit.B, choose.S
+    data.WAY0 -> choose.A
+    data.WAY1 -> choose.B
+    hit.Y -> hit_result.HIT
+    choose.Y -> result.DATA
+}

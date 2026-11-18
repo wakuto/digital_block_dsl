@@ -1,5 +1,3 @@
-version 1
-
 diagram "Logic and Arithmetic Primitives" {
     direction LR
 

@@ -1,5 +1,3 @@
-version 1
-
 diagram "Three-Tap Streaming FIR" {
     direction LR
     layout balanced

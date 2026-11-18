@@ -1,4 +1,5 @@
-import { DiagramError, signalToString, type Block, type Diagram, type Direction, type Net, type Port, type SignalRef, type Wiring } from "./model.js";
+import { DiagramError, signalToString, type Block, type Diagram, type Direction, type Net, type Port, type SignalRef, type Wiring, type Table, type StructuredTable, type MicroField, type TableBinding } from "./model.js";
+import { parseTable } from "./table.js";
 import { validatePreset } from "./symbols.js";
 
 interface Tok { value: string; kind: "word" | "int" | "string" | "punct"; line: number; column: number }
@@ -41,6 +42,13 @@ class Reader {
     return { endpoint, msb: hi, lsb: lo };
   }
   endpoint(): string { return this.ref().endpoint; }
+  optionalBindingWidth(port: Tok): number | null {
+    if (!this.take("[")) return null;
+    const width = this.integer(); this.need("]");
+    if (!Number.isSafeInteger(width) || width < 1 || width > MAX_TABLE_VECTOR)
+      throw new DiagramError("E204", "table port width must be 1 through 65536 bits", port.line);
+    return width;
+  }
   ports(direction: Direction): Record<string, Port> {
     const result: Record<string, Port> = {};
     do {
@@ -85,13 +93,54 @@ function setRefWidth(d: Diagram, r: SignalRef, width: number, line: number): boo
   const p = getPort(d, r.endpoint, line); if (p.width !== null && p.width !== width) throw new DiagramError("E204", `width mismatch: ${signalToString(r)} has ${p.width} bits, expected ${width}`, line);
   if (p.width === null) { p.width = width; return true; } return false;
 }
+const MAX_TABLE_VECTOR = 65536;
+function tableVectorGroups(d: Diagram) {
+  return Object.values(d.blocks).flatMap(b => {
+    if (!b.structuredTable || b.structuredTable.entries !== undefined) return [];
+    const fields = new Map(b.structuredTable.fields.map(f => [f.id, f.width]));
+    const reads = (b.tableBindings ?? []).filter(binding => binding.all).map(binding => ({
+      port: b.ports[binding.port], fieldWidth: fields.get(binding.field)!,
+    }));
+    return reads.length ? [{ id: b.id, reads }] : [];
+  });
+}
+function resolveTableVectors(groups: ReturnType<typeof tableVectorGroups>, final = false): boolean {
+  let changed = false;
+  for (const { id, reads } of groups) {
+    let count: number | undefined;
+    for (const { port, fieldWidth } of reads) {
+      if (port.width === null) continue;
+      if (port.width > MAX_TABLE_VECTOR || port.width % fieldWidth !== 0)
+        throw new DiagramError("E204", "all-entry read width must be a multiple of its field width and at most 65536 bits", port.line);
+      const rows = port.width / fieldWidth;
+      if (count !== undefined && count !== rows)
+        throw new DiagramError("E204", "all-entry reads of the same table must cover the same number of entries", port.line);
+      count = rows;
+    }
+    for (const { port, fieldWidth } of reads) {
+      if (port.width !== null) continue;
+      if (count === undefined) {
+        if (final) throw new DiagramError("E207", "cannot infer width of " + id + "." + port.name + "; specify read width or connect a sized port", port.line);
+        continue;
+      }
+      const width = count * fieldWidth;
+      if (width > MAX_TABLE_VECTOR)
+        throw new DiagramError("E204", "generated all-entry vector exceeds 65536 bits", port.line);
+      port.width = width;
+      changed = true;
+    }
+  }
+  return changed;
+}
 function resolve(d: Diagram): void {
+  const tableVectors = tableVectorGroups(d);
+  resolveTableVectors(tableVectors);
   for (const w of d.wirings) {
     for (const r of w.sources) if (role(d, r.endpoint, w.line) !== "source") throw new DiagramError("E103", `${signalToString(r)} cannot drive a net`, w.line);
     for (const r of w.sinks) if (role(d, r.endpoint, w.line) !== "sink") throw new DiagramError("E103", `${signalToString(r)} cannot receive a net`, w.line);
     for (const r of [...w.sources, ...w.sinks]) if (r.msb !== null && getPort(d, r.endpoint, w.line).width === null) throw new DiagramError("E207", `slice ${signalToString(r)} requires an explicitly sized port`, w.line);
   }
-  for (let pass = 0; pass < Math.max(2, d.wirings.length * 3 + 1); pass++) {
+  for (let pass = 0; pass < Math.max(2, d.wirings.length * 3 + tableVectors.length + 1); pass++) {
     let changed = false;
     for (const w of d.wirings) {
       const sw = w.sources.map(r => refWidth(d, r, w.line)), dw = w.sinks.map(r => refWidth(d, r, w.line));
@@ -104,8 +153,10 @@ function resolve(d: Diagram): void {
       const missing = sw.map((x,i)=>x === null ? i : -1).filter(i=>i>=0);
       if (missing.length === 1) { const remainder = target - sw.reduce<number>((n,x)=>n+(x??0),0); changed = setRefWidth(d,w.sources[missing[0]],remainder,w.line)||changed; }
     }
+    changed = resolveTableVectors(tableVectors) || changed;
     if (!changed) break;
   }
+  resolveTableVectors(tableVectors, true);
   const owners = new Map<string,string>(), nets: Record<string,Net> = {}, names = new Map<string,string>();
   for (const w of d.wirings) {
     const widths = w.sources.map(r=>refWidth(d,r,w.line));
@@ -127,14 +178,23 @@ function resolve(d: Diagram): void {
   d.nets=Object.values(nets);
 }
 
-/** Parse, validate and infer widths from a v0.4 .cdl source string. */
-export function parse(source: string): Diagram {
-  const r = new Reader(source); const version = r.word(); if(version.value!=="version")r.fail("expected version declaration"); const v=r.integer(); if(v!==1)throw new DiagramError("E002","only version 1 is supported",version.line);
-  const key=r.word();if(key.value!=="diagram")r.fail("expected diagram declaration");const title=r.string();r.need("{");
-  const d:Diagram={title,direction:"LR",theme:"light",layout:"balanced",netlabels:true,ports:{},blocks:{},nets:[],wirings:[]};
+/** Parse, validate and infer widths from a CDL source string. */
+export interface ParseOptions { mode?: Diagram["mode"] }
+export function parse(source: string, options: ParseOptions = {}): Diagram {
+  if(options.mode!==undefined&&options.mode!=="circuit"&&options.mode!=="microarchitecture")throw new DiagramError("E202",`invalid mode ${String(options.mode)}`);
+  const r = new Reader(source);
+  if (r.is("version")) {
+    const version = r.pop();
+    if (r.integer() !== 1) throw new DiagramError("E002", "only version 1 is supported", version.line);
+  }
+  r.need("diagram");
+  const title=r.string();r.need("{");
+  const d:Diagram={title,mode:"circuit",direction:"LR",theme:"light",layout:"balanced",netlabels:true,ports:{},blocks:{},nets:[],wirings:[]};
+  let declaredMode = false;
   while(!r.take("}")){
     if(r.is("<eof>"))r.fail("unterminated diagram");const t=r.t;
     if(r.is("direction")){r.pop();const x=r.word();if(!["LR","RL","TB","BT"].includes(x.value))r.fail("invalid direction");d.direction=x.value as Diagram["direction"];continue;}
+    if(r.is("mode")&&r.ts[r.pos+1]?.kind==="word"){r.pop();const x=r.word();if(declaredMode)throw new DiagramError("E102","duplicate mode declaration",t.line);declaredMode=true;if(!["circuit","microarchitecture"].includes(x.value))throw new DiagramError("E202",`invalid mode ${x.value}`,x.line);d.mode=x.value as Diagram["mode"];continue;}
     if(r.is("theme")){r.pop();const x=r.word();if(!["light","dark","mono"].includes(x.value))r.fail("invalid theme");d.theme=x.value as Diagram["theme"];continue;}
     if(r.is("layout")){r.pop();const x=r.word();if(!["balanced","compact","feedback"].includes(x.value))r.fail("invalid layout");d.layout=x.value as Diagram["layout"];continue;}
     if(r.is("netlabels")){r.pop();const x=r.word();if(x.value!=="on"&&x.value!=="off")r.fail("invalid netlabels setting");d.netlabels=x.value==="on";continue;}
@@ -146,18 +206,88 @@ export function parse(source: string): Diagram {
     if(r.take(":")){
       if(name.value in d.blocks||name.value in d.ports)throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(name.value)}`,name.line);
       let type:string,label:string,params:Record<string,string|number>={};
-      if(r.is("box")){r.pop();type="box";label=r.string();}else{type=r.word().value;label=type;if(r.is("("))params=r.params();}
-      const preset=validatePreset(type,params,name.line), ports=preset??{};let style:string|null=null;
-      if(r.take("{")){while(!r.take("}")){if(r.is("style")){r.pop();style=r.word().value;if(!["logic","storage","control","neutral","accent"].includes(style))r.fail("invalid style");}
+      if(r.is("box")){r.pop();type="box";label=r.string();}else{type=r.word().value;label=type;if(type==="table")label=r.t.kind==="string"?r.string():"";if(type==="record")label=r.string();if(r.is("("))params=r.params();}
+      const preset=validatePreset(type,params,name.line);const ports=preset??{};let style:string|null=null;let table:Table|undefined;let structuredTable:StructuredTable|undefined;let recordFields:MicroField[]|undefined;const tableBindings:TableBinding[]=[];const fields:MicroField[]=[];const indices:string[]=[];
+      if(type==="table"||type==="record"){
+        if(type==="table"){
+          const allowed=["entries","rows","ellipsis","selected"];for(const k of Object.keys(params))if(!allowed.includes(k))throw new DiagramError("E202",`unsupported structured table parameter: ${k}`,name.line);
+          const entries=params.entries;
+          if(entries!==undefined&&(typeof entries!=="number"||!Number.isSafeInteger(entries)||entries<1))throw new DiagramError("E202","table entries must be a positive safe integer",name.line);
+          const rows=params.rows??Math.min(entries??5,5);
+          if(typeof rows!=="number"||!Number.isSafeInteger(rows)||rows<1||rows>64||(entries!==undefined&&rows>entries))throw new DiagramError("E202","table rows must be from 1 to 64 and no greater than entries when specified",name.line);
+          const canShowEllipsis=rows>=3&&(entries===undefined||entries>rows);
+          const ell=params.ellipsis??(canShowEllipsis?"on":"off");
+          if(ell!=="on"&&ell!=="off")throw new DiagramError("E202","table ellipsis must be on or off",name.line);
+          if(ell==="on"&&!canShowEllipsis)throw new DiagramError("E202","ellipsis needs at least three rows and room for hidden entries",name.line);
+          const selected=params.selected??null;if(selected!==null&&(typeof selected!=="number"||!Number.isSafeInteger(selected)||selected<0||selected>=rows||(ell==="on"&&selected===rows-2)))throw new DiagramError("E202","selected must identify a visible non-ellipsis row",name.line);
+          structuredTable={...(entries===undefined?{}:{entries}),rows,ellipsis:ell==="on",selected:selected as number|null,fields,indices};
+        } else { if(Object.keys(params).length)throw new DiagramError("E202","record does not accept parameters",name.line);recordFields=fields; }
+      }
+      if(r.take("{")){while(!r.take("}")){if(r.is("table")){const token=r.pop();if(type!=="box")throw new DiagramError("E202","table is only supported inside box blocks",token.line);if(table)throw new DiagramError("E102","duplicate table declaration",token.line);table=parseTable(r.params(),token.line);}
+          else if((r.is("field")||r.is("index")||r.is("read")||r.is("write"))&&(type==="table"||type==="record")){
+            const kind=r.pop();
+            if(kind.value==="field") {const fn=r.word();r.need("[");const width=r.integer();r.need("]");if(!Number.isSafeInteger(width)||width<1)throw new DiagramError("E201","field width must be a positive safe integer",fn.line);let flabel=fn.value,use:string|null=null;if(r.take("label"))flabel=r.string();if(r.take("use"))use=r.string();if(fields.some(f=>f.id===fn.value))throw new DiagramError("E102",`duplicate field ${fn.value}`,fn.line);fields.push({id:fn.value,width,label:flabel,use,msb:0,lsb:0});}
+            else if(kind.value==="index") {
+              const pn=r.word();
+              if(!structuredTable)throw new DiagramError("E202","records do not have indices",pn.line);
+              const width=r.optionalBindingWidth(pn);
+              const side=r.take("@")?r.word().value:"west";
+              if(side!=="west"&&side!=="east")throw new DiagramError("E202","table index decoders must be on the west or east side",pn.line);
+              const capacity=structuredTable.entries;
+              const expected=capacity===undefined?null:Math.max(1,Math.ceil(Math.log2(capacity)));
+              if(width!==null&&expected!==null&&width!==expected)throw new DiagramError("E204",`index width must be ${expected}`,pn.line);
+              if(ports[pn.value])throw new DiagramError("E102",`duplicate port ${pn.value}`,pn.line);
+              ports[pn.value]={name:pn.value,direction:"input",width:width??expected,side,line:pn.line};
+              indices.push(pn.value);
+            } else {
+              const pn=r.word();
+              if(!structuredTable)throw new DiagramError("E202","records do not have read/write ports",pn.line);
+              const width=r.optionalBindingWidth(pn);
+              const isRead=kind.value==="read";
+              r.need(isRead?"from":"to");
+              const field=r.word(),all=isRead&&r.take("all");
+              const via=r.take("via")?r.word().value:undefined;
+              if(all&&via!==undefined)throw new DiagramError("E202","all-entry reads cannot select an index",pn.line);
+              const required=isRead?"south":"north",side=r.take("@")?r.word().value:required;
+              if(side!==required)throw new DiagramError("E202",`${kind.value} table ports must attach on @${required}`,pn.line);
+              if(ports[pn.value])throw new DiagramError("E102",`duplicate port ${pn.value}`,pn.line);
+              ports[pn.value]={name:pn.value,direction:isRead?"output":"input",width,side,line:pn.line};
+              tableBindings.push({port:pn.value,field:field.value,kind:isRead?"read":"write",all,side,...(via===undefined?{}:{index:via})});
+            }
+          }
+          else if(r.is("style")){r.pop();style=r.word().value;if(!["logic","storage","control","neutral","accent"].includes(style))r.fail("invalid style");}
           else if(r.is("label")){r.pop();label=r.string();}
-          else if(r.is("in")||r.is("out")){const local=r.pop(), dir:Direction=local.value==="in"?"input":"output", extras=r.ports(dir);for(const [pn,p]of Object.entries(extras)){if(ports[pn]){const old=ports[pn];if(!preset||old.direction!==p.direction||(p.width!==null&&p.width!==old.width))throw new DiagramError("E102",`incompatible duplicate port ${name.value}.${pn}`,p.line);if(p.side)old.side=p.side;}else{if(preset)throw new DiagramError("E102",`cannot add port ${JSON.stringify(pn)} to builtin ${type}`,p.line);ports[pn]=p;}}}
+          else if(r.is("in")||r.is("out")){const local=r.pop(), dir:Direction=local.value==="in"?"input":"output", extras=r.ports(dir);if(type==="record")throw new DiagramError("E202","record ports are generated from its fields",local.line);for(const [pn,p]of Object.entries(extras)){if(ports[pn]){const old=ports[pn];if(!preset||old.direction!==p.direction||(p.width!==null&&p.width!==old.width))throw new DiagramError("E102",`incompatible duplicate port ${name.value}.${pn}`,p.line);if(p.side){old.side=p.side;old.explicitSide=true;}}else{if(preset)throw new DiagramError("E102",`cannot add port ${JSON.stringify(pn)} to builtin ${type}`,p.line);ports[pn]=p;}}}
           else r.fail("expected block body declaration");}}
-      if(!Object.keys(ports).length)throw new DiagramError("E203",`${name.value} has no ports; declare them using a block body`,name.line);
-      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style};continue;
+      if(structuredTable){
+        if(!fields.length)throw new DiagramError("E202","structured table requires at least one field",name.line);
+        let cursor=fields.reduce((n,f)=>n+f.width,0);if(!Number.isSafeInteger(cursor))throw new DiagramError("E204","record total width exceeds safe integer range",name.line);for(const f of fields){f.msb=cursor-1;cursor-=f.width;f.lsb=cursor;}
+        for(const binding of tableBindings){
+          const port=ports[binding.port],field=fields.find(f=>f.id===binding.field);
+          if(!field)throw new DiagramError("E101",`unknown table field ${binding.field}`,port.line);
+          if(binding.index!==undefined&&!structuredTable.indices.includes(binding.index))
+            throw new DiagramError("E101",`unknown table index ${binding.index}`,port.line);
+          const count=binding.all?structuredTable.entries:1;
+          if(count===undefined)continue;
+          const width=field.width*count;
+          if(width>MAX_TABLE_VECTOR)throw new DiagramError("E204","generated table port exceeds 65536 bits",port.line);
+          if(port.width!==null&&port.width!==width)throw new DiagramError("E204",`table port ${port.name} must be ${width} bits`,port.line);
+          port.width=width;
+        }
+      }
+      if(type==="record"){
+        if(!fields.length)throw new DiagramError("E202","record requires at least one field",name.line);let cursor=fields.reduce((n,f)=>n+f.width,0);if(!Number.isSafeInteger(cursor))throw new DiagramError("E204","record total width exceeds safe integer range",name.line);for(const f of fields){f.msb=cursor-1;cursor-=f.width;f.lsb=cursor;}
+        if(ports.IN)throw new DiagramError("E102","record field id conflicts with generated IN port",name.line);ports.IN={name:"IN",direction:"input",width:fields.reduce((n,f)=>n+f.width,0),side:"north",line:name.line};
+        for(const f of fields){if(ports[f.id])throw new DiagramError("E102",`record field id conflicts with port ${f.id}`,name.line);ports[f.id]={name:f.id,direction:"output",width:f.width,side:"south",line:name.line};}
+      }
+      if(!Object.keys(ports).length&&type!=="table")throw new DiagramError("E203",`${name.value} has no ports; declare them using a block body`,name.line);
+      d.blocks[name.value]={id:name.value,type,label,ports,params,line:name.line,builtin:preset!==null,style,...(table?{table}:{}),...(structuredTable?{structuredTable}:{}),...(recordFields?{recordFields}:{}),...(tableBindings.length?{tableBindings}:{})};continue;
     }
     r.pos--;const start=r.t;const sources=r.signalExpr();if(!r.take("->"))r.fail("expected ':' for block declaration or '->' for connection");const sinks=[r.ref()];while(r.take(","))sinks.push(r.ref());d.wirings.push({sources,sinks,name:null,width:null,line:start.line});
   }
   if(!r.is("<eof>"))r.fail("unexpected content after diagram");
   for(const p of Object.values(d.ports))if(d.blocks[p.name])throw new DiagramError("E102",`duplicate identifier ${JSON.stringify(p.name)}`,p.line);
+  d.mode=options.mode??d.mode;
+  if(d.mode==="circuit"&&Object.values(d.blocks).some(b=>b.structuredTable||b.recordFields))throw new DiagramError("E202","structured tables and address records require microarchitecture mode");
   resolve(d);return d;
 }

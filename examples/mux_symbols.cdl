@@ -1,0 +1,18 @@
+diagram "MUX and port arrows" {
+    direction LR
+    input a[8], b[8], c[8], d[8], select[2], alternate[8], bypass[1]
+    output result[8]
+
+    pick: MUX(width=8, inputs=4)
+    choose: MUX(width=8) { in A@north, B@north, S@west out Y@south }
+
+    a -> pick.A
+    b -> pick.B
+    c -> pick.C
+    d -> pick.D
+    select -> pick.S
+    pick.Y -> choose.A
+    alternate -> choose.B
+    bypass -> choose.S
+    choose.Y -> result
+}

@@ -1,0 +1,57 @@
+diagram "Two-way set-associative cache" {
+    mode microarchitecture
+    direction TB
+    layout compact
+    input address[32]@north
+    output data[64]@south, hit[1]@west
+
+    addr: record "Address" {
+        field tag[23] label "Tag"
+        field set[6] label "Set"
+        field offset[3] label "Byte offset"
+    }
+
+    way0: table "Way 0" {
+        field valid[1] label "Valid" use "Qualifies the tag match"
+        field tag[23] label "Tag" use "Compared with the request tag"
+        field data[64] label "Data" use "Eight-byte cache line"
+        index SET@west
+        read VALID from valid
+        read TAG from tag
+        read DATA from data
+    }
+    way1: table "Way 1" {
+        field valid[1] label "Valid" use "Qualifies the tag match"
+        field tag[23] label "Tag" use "Compared with the request tag"
+        field data[64] label "Data" use "Eight-byte cache line"
+        index SET@west
+        read VALID from valid
+        read TAG from tag
+        read DATA from data
+    }
+
+    match0: CMP(width=23)
+    match1: CMP(width=23)
+    hit0: AND(width=1)
+    hit1: AND(width=1)
+    any_hit: OR(width=1)
+    choose: MUX(width=64)
+
+    address -> addr.IN
+    addr.set -> way0.SET, way1.SET
+    addr.tag -> match0.A, match1.A
+    way0.TAG -> match0.B
+    way1.TAG -> match1.B
+    match0.Y -> hit0.A
+    way0.VALID -> hit0.B
+    match1.Y -> hit1.A
+    way1.VALID -> hit1.B
+    hit0.Y -> any_hit.A
+    hit1.Y -> any_hit.B, choose.S
+    any_hit.Y -> hit
+
+    // The full line is shown; byte selection after the lookup is omitted.
+    way0.DATA -> choose.A
+    way1.DATA -> choose.B
+    choose.Y -> data
+}

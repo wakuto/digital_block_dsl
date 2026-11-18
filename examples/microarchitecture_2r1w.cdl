@@ -1,0 +1,26 @@
+diagram "Two-read, one-write register file" {
+    mode microarchitecture
+    direction TB
+    layout compact
+
+    input read_a_addr[5]@north, read_b_addr[5]@west
+    input write_addr[5]@east, write_data[32]@north
+    output read_a_data[32]@south, read_b_data[32]@south
+
+    regs: table "Register file" {
+        field value[32] label "Value"
+        index RA@west
+        index RB@west
+        index WA@east
+        read RD_A from value via RA
+        read RD_B from value via RB
+        write WD to value via WA
+    }
+
+    read_a_addr -> regs.RA
+    read_b_addr -> regs.RB
+    write_addr -> regs.WA
+    write_data -> regs.WD
+    regs.RD_A -> read_a_data
+    regs.RD_B -> read_b_data
+}

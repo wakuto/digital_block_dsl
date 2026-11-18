@@ -1,0 +1,26 @@
+diagram "Indexed table with bypass" {
+    mode microarchitecture
+    direction TB
+
+    input fill_data[16]@north, bypass[16]@north
+    input index[3]@west, use_bypass[1]@west
+    output data[16]@south, valid[1]@east
+
+    values: table "Values" {
+        field data[16] label "Data"
+        field valid[1] label "Valid"
+        index SET
+        write FILL to data
+        read VALUE from data
+        read VALID from valid
+    }
+    select: MUX(width=16) { in A@north, B@north, S@west out Y@south }
+
+    index -> values.SET
+    fill_data -> values.FILL
+    values.VALUE -> select.A
+    values.VALID -> valid
+    bypass -> select.B
+    use_bypass -> select.S
+    select.Y -> data
+}
