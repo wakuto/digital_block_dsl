@@ -228,7 +228,7 @@ instruction_memory: box "Instruction Memory" {
 pc.VALUE -> instruction_memory.ADDR
 ```
 
-By default inputs are drawn on the west side and outputs on the east. Add `@north`, `@south`, `@west` or `@east` to a port to move it, for example `in CLK@north`. Use this sparingly. The default placement is usually the most readable.
+With the default `direction LR`, inputs are drawn on the west side and outputs on the east. Unannotated boxes rotate with the diagram's `direction`, so their inputs stay on the incoming side and outputs on the outgoing side. Add `@north`, `@south`, `@west` or `@east` to a port to place it manually, for example `in CLK@north`. Specifying any port side disables automatic rotation; unannotated ports keep their default west/east sides. An explicit `@90`, `@180` or `@270` still rotates the box.
 
 ## Bit slices and concatenation
 
@@ -456,7 +456,7 @@ the direction by default. An explicit `@north`, `@south`, `@west`, or `@east`
 on a diagram input or output places it on that edge and turns the port symbol
 so its connection point faces the diagram. Port labels stay upright. This
 works in either diagram mode. Unannotated logic gates, arithmetic symbols,
-comparators and MUXes turn with the diagram flow, including their port arrows.
+comparators, MUXes and generic `box` blocks turn with the diagram flow, including their port arrows.
 If any port side is specified on a block, that block keeps its manual
 placement and the usual defaults for its other pins. Text stays upright.
 

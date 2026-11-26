@@ -255,7 +255,7 @@ function blockSvg(b:Block,pal:Palette,direction:Flow,order?:ReadonlyMap<string,n
  const sides:Record<Side,Port[]>={west:[],east:[],north:[],south:[]};for(const p of Object.values(b.ports))sides[p.side??(p.direction==="input"?"west":"east")].push(p);
  for(const side of facing)sides[side]=orderedSlots(sides[side],order);
  const flow=b.explicitRotation||b.rotation?rotationFlow[b.rotation/90]
-   :b.builtin&&autoOriented.has(b.type)&&!Object.values(b.ports).some(p=>p.explicitSide)?direction:"LR";
+   :((b.builtin&&autoOriented.has(b.type))||b.type==="box")&&!Object.values(b.ports).some(p=>p.explicitSide)?direction:"LR";
  if(b.type==="MUX")return muxSvg(b,pal,sides,flow);
  const labelLines=b.label.split("\n"),len=(s:Port[])=>s.reduce((n,p)=>Math.max(n,p.name.length),0),maxSide=Math.max(sides.west.length,sides.east.length);
  const logicGate=["AND","OR","NOT"].includes(b.type);
