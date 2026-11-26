@@ -54,7 +54,7 @@ class Reader {
     do {
       const tok = this.word(), p: Port = { name: tok.value, direction, width: null, side: null, line: tok.line };
       if (this.take("[")) { p.width = this.integer(); this.need("]"); if (p.width === 0) throw new DiagramError("E201", `port ${p.name} width must be positive`, tok.line); }
-      if (this.take("@")) { const side = this.word().value; if (!["west", "east", "north", "south"].includes(side)) this.fail("invalid port side"); p.side = side as Port["side"]; }
+      if (this.take("@")) { const side = this.word().value; if (!["west", "east", "north", "south"].includes(side)) this.fail("invalid port side"); p.side = side as Port["side"]; p.explicitSide = true; }
       if (result[p.name]) throw new DiagramError("E102", `duplicate port ${JSON.stringify(p.name)}`, p.line);
       result[p.name] = p;
     } while (this.take(","));

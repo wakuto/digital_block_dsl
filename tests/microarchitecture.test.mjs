@@ -174,7 +174,7 @@ test("field-only structured tables and CLI mode errors", () => {
   assert.equal(override.status, 0, override.stderr);
 });
 
-test("unannotated gates and MUXes turn with the flow, preserving pin order and manual sides", () => {
+test("unannotated gates, MUXes and boxes turn with the flow, preserving pin order and manual sides", () => {
   const pin=(cell,name)=>{
     const match=cell.match(new RegExp(`<g s:x="([\\d.]+)" s:y="([\\d.]+)" s:pid="${name}"/>`));
     assert.ok(match, `missing pin ${name}`);
@@ -185,11 +185,13 @@ test("unannotated gates and MUXes turn with the flow, preserving pin order and m
     const src=`version 1 diagram "Flow" {
       gate: AND(width=1)
       mux: MUX(width=1)
+      box: box "Generic" { in A, B out Y }
       manual: AND(width=1) { in A@west }
+      manual_box: box "Manual" { in A@west out Y }
       direction ${direction}
     }`;
     const skin=generateSkin(parse(src));
-    for(const id of ["gate","mux"]){
+    for(const id of ["gate","mux","box"]){
       const cell=skinCell(skin,id);
       assert.ok(cell);
       const dimensions=[Number(cell.match(/s:width="(\d+)"/)[1]),Number(cell.match(/s:height="(\d+)"/)[1])];
@@ -203,6 +205,9 @@ test("unannotated gates and MUXes turn with the flow, preserving pin order and m
     const manual=skinCell(skin,"manual");
     assert.equal(pin(manual,"A")[0],0);
     assert.doesNotMatch(manual,/transform="matrix/);
+    const manualBox=skinCell(skin,"manual_box");
+    assert.equal(pin(manualBox,"A")[0],0);
+    assert.doesNotMatch(manualBox,/transform="matrix/);
   }
 });
 
